@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Product, MovementType } from "@/app/types/product";
 import { recordInventoryMovement } from "@/app/actions/products";
+import { useUser } from "@/app/context/UserContext";
 
 type InventoryMovementModalProps = {
   product: Product;
@@ -21,6 +22,7 @@ export default function InventoryMovementModal({
   onClose,
   onSuccess,
 }: InventoryMovementModalProps) {
+  const { currentUser } = useUser();
   const [movementType, setMovementType] = useState<MovementType>("entrada");
   const [quantity, setQuantity] = useState<string>("");
   const [reason, setReason] = useState<string>("");
@@ -34,8 +36,15 @@ export default function InventoryMovementModal({
     e.preventDefault();
     setError(null);
 
-    if (!quantity || parseInt(quantity) <= 0) {
+    const qty = parseInt(quantity);
+    if (!quantity || qty <= 0) {
       setError("Ingresa una cantidad válida mayor a 0");
+      return;
+    }
+
+    // Validar que hay suficiente stock para salidas
+    if (movementType === "salida" && product.stock < qty) {
+      setError(`Stock insuficiente. Disponible: ${product.stock}`);
       return;
     }
 
@@ -44,9 +53,10 @@ export default function InventoryMovementModal({
     const result = await recordInventoryMovement(
       product.id as string,
       movementType,
-      parseInt(quantity),
+      qty,
       reason || undefined,
-      notes || undefined
+      notes || undefined,
+      currentUser || undefined
     );
 
     setIsSubmitting(false);
