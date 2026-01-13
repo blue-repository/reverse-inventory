@@ -30,6 +30,7 @@ export default function ProductsTableClient({
   const [showForm, setShowForm] = useState(false);
   const [showQuickInventory, setShowQuickInventory] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [scannerIntent, setScannerIntent] = useState<"search" | "select">("select");
   const [editingProduct, setEditingProduct] = useState<Product | undefined>();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -107,6 +108,22 @@ export default function ProductsTableClient({
     setSelectedProduct(null);
   };
 
+  const applySearchFromCode = useCallback(
+    (rawCode: string) => {
+      const value = rawCode.trim();
+      const params = new URLSearchParams();
+      if (value) {
+        params.set("q", value);
+      }
+      params.set("page", "1");
+      params.set("pageSize", pageSize.toString());
+
+      setSearchQuery(value);
+      router.push(`/?${params.toString()}`, { scroll: false });
+    },
+    [router, pageSize]
+  );
+
   const handleCreate = () => {
     setEditingProduct(undefined);
     setShowForm(true);
@@ -136,17 +153,33 @@ export default function ProductsTableClient({
     <>
       <div className="mb-4 sm:mb-6 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex-1 w-full">
-          <input
-            type="text"
-            placeholder="Buscar..."
-            value={searchQuery}
-            onChange={handleSearch}
-            className="w-full rounded-lg border border-slate-300 px-3 sm:px-4 py-2 sm:py-2.5 text-sm placeholder-slate-500 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-1"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Buscar..."
+              value={searchQuery}
+              onChange={handleSearch}
+              className="w-full rounded-lg border border-slate-300 pr-12 sm:pr-14 px-3 sm:px-4 py-2 sm:py-2.5 text-sm placeholder-slate-500 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-1"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setScannerIntent("search");
+                setShowScanner(true);
+              }}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md bg-slate-900 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-slate-800"
+              aria-label="Escanear para buscar"
+            >
+              📸
+            </button>
+          </div>
         </div>
         <div className="flex gap-2 sm:gap-3">
           <button
-            onClick={() => setShowScanner(true)}
+            onClick={() => {
+              setScannerIntent("select");
+              setShowScanner(true);
+            }}
             className="flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2 sm:py-2.5 text-sm font-medium text-white hover:bg-purple-700 transition-colors whitespace-nowrap flex-1 sm:flex-initial"
             title="Escanear código de barras o QR"
           >
@@ -465,11 +498,22 @@ export default function ProductsTableClient({
       {showForm && <ProductForm product={editingProduct} onClose={handleCloseForm} />}
       {showScanner && (
         <BarcodeScannerModal
+          mode={scannerIntent === "search" ? "code" : "product"}
           onClose={() => setShowScanner(false)}
-          onSelectProduct={(product) => {
-            setSelectedProduct(product);
+          onCodeScanned={(code) => {
+            applySearchFromCode(code);
             setShowScanner(false);
+            setScannerIntent("select");
           }}
+          onSelectProduct={
+            scannerIntent === "search"
+              ? undefined
+              : (product) => {
+                  setSelectedProduct(product);
+                  setShowScanner(false);
+                  setScannerIntent("select");
+                }
+          }
         />
       )}
       {showQuickInventory && (

@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Product, MovementType } from "@/app/types/product";
 import { recordInventoryMovement, searchProducts } from "@/app/actions/products";
+import BarcodeScannerModal from "./BarcodeScannerModal";
+import { useUser } from "@/app/context/UserContext";
 
 type QuickInventoryModalProps = {
   onClose: () => void;
@@ -21,11 +23,13 @@ export default function QuickInventoryModal({
   onSuccess,
   initialProduct,
 }: QuickInventoryModalProps) {
+  const { currentUser } = useUser();
   const [searchQuery, setSearchQuery] = useState<string>(initialProduct?.name || "");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(initialProduct || null);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   
   const [movementType, setMovementType] = useState<MovementType>("entrada");
   const [quantity, setQuantity] = useState<string>("");
@@ -104,7 +108,8 @@ export default function QuickInventoryModal({
       movementType,
       parseInt(quantity),
       reason || undefined,
-      notes || undefined
+      notes || undefined,
+      currentUser || undefined
     );
 
     setIsSubmitting(false);
@@ -131,40 +136,39 @@ export default function QuickInventoryModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/70 overflow-y-auto flex items-center justify-center p-2 sm:p-4"
+      className="fixed inset-0 z-50 bg-black/70 overflow-y-auto"
       onClick={onClose}
     >
-      <div
-        className="relative w-full max-w-md bg-white rounded-xl shadow-2xl my-4 sm:my-8"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          className="absolute right-2 top-2 rounded-full bg-slate-900 p-1.5 sm:p-2 text-white hover:bg-slate-700 transition-colors"
-          aria-label="Cerrar"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-            className="h-4 w-4 sm:h-5 sm:w-5"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+      <div className="mx-auto w-full max-w-md p-2 sm:p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="relative bg-white rounded-xl sm:rounded-2xl shadow-2xl w-full max-h-[calc(100vh-1rem)] sm:max-h-[calc(100vh-2rem)] min-h-[70vh] flex flex-col overflow-hidden">
+          <div className="sticky top-0 z-10 border-b border-slate-200 px-3 sm:px-4 md:px-6 py-3 sm:py-4 bg-white flex items-start gap-3">
+            <div className="flex-1">
+              <h2 className="text-base sm:text-lg md:text-xl font-bold text-slate-900">
+                Movimiento Rápido
+              </h2>
+              <p className="mt-1 text-xs sm:text-sm text-slate-600">
+                Busca y registra entrada/salida rápidamente
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="relative -mr-1 -mt-1 rounded-full bg-slate-900 p-2 text-white hover:bg-slate-700 transition-colors"
+              aria-label="Cerrar"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+                className="h-4 w-4 sm:h-5 sm:w-5"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
 
-        <div className="border-b border-slate-200 px-3 sm:px-4 md:px-6 py-3 sm:py-4">
-          <h2 className="text-base sm:text-lg md:text-xl font-bold text-slate-900">
-            Movimiento Rápido
-          </h2>
-          <p className="mt-1 text-xs sm:text-sm text-slate-600">
-            Busca y registra entrada/salida rápidamente
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4">
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4">
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-red-800">
               {error}
@@ -185,14 +189,22 @@ export default function QuickInventoryModal({
                 onFocus={() => searchResults.length > 0 && setShowResults(true)}
                 placeholder="Nombre, código de barras o descripción..."
                 disabled={!!selectedProduct}
-                className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
+                className="w-full rounded-lg border border-slate-300 pr-10 sm:pr-12 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
                 required
               />
+              <button
+                type="button"
+                onClick={() => setShowScanner(true)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md bg-slate-900 px-2 py-1 text-white text-xs sm:text-sm font-semibold hover:bg-slate-800 disabled:opacity-50"
+                aria-label="Escanear con cámara"
+              >
+                📸
+              </button>
               {selectedProduct && (
                 <button
                   type="button"
                   onClick={handleClearProduct}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-10 sm:right-12 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   title="Cambiar producto"
                 >
                   <svg
@@ -208,7 +220,7 @@ export default function QuickInventoryModal({
                 </button>
               )}
               {isSearching && (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                <div className="absolute right-10 sm:right-12 top-1/2 -translate-y-1/2">
                   <div className="animate-spin h-4 w-4 border-2 border-slate-300 border-t-slate-600 rounded-full"></div>
                 </div>
               )}
@@ -360,8 +372,20 @@ export default function QuickInventoryModal({
               {isSubmitting ? "Registrando..." : "Registrar Movimiento"}
             </button>
           </div>
-        </form>
+          </form>
+        </div>
       </div>
+      {showScanner && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <BarcodeScannerModal
+            onClose={() => setShowScanner(false)}
+            onSelectProduct={(product) => {
+              handleSelectProduct(product);
+              setShowScanner(false);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

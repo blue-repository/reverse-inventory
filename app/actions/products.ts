@@ -51,7 +51,7 @@ export async function searchProductByBarcode(barcode: string) {
   return { data, error: null };
 }
 
-export async function createProduct(formData: FormData) {
+export async function createProduct(formData: FormData, createdBy?: string) {
   const stock_inicial = parseInt(formData.get("stock") as string) || 0;
   
   const product = {
@@ -66,6 +66,8 @@ export async function createProduct(formData: FormData) {
     issue_date: formData.get("issue_date") as string || null,
     expiration_date: formData.get("expiration_date") as string || null,
     image_url: formData.get("image_url") as string || null,
+    created_by: createdBy || "Sistema",
+    updated_by: createdBy || "Sistema",
   };
 
   const { error } = await supabase.from("products").insert([product]);
@@ -78,7 +80,7 @@ export async function createProduct(formData: FormData) {
   return { success: true };
 }
 
-export async function updateProduct(id: string, formData: FormData) {
+export async function updateProduct(id: string, formData: FormData, updatedBy?: string) {
   const product = {
     name: formData.get("name") as string,
     barcode: formData.get("barcode") as string || null,
@@ -90,6 +92,7 @@ export async function updateProduct(id: string, formData: FormData) {
     issue_date: formData.get("issue_date") as string || null,
     expiration_date: formData.get("expiration_date") as string || null,
     image_url: formData.get("image_url") as string || null,
+    updated_by: updatedBy || "Sistema",
   };
 
   const { error } = await supabase
@@ -126,10 +129,30 @@ export async function recordInventoryMovement(
   movementType: MovementType,
   quantity: number,
   reason?: string,
-  notes?: string
+  notes?: string,
+  recordedBy?: string
 ) {
   if (quantity <= 0) {
     return { success: false, error: "La cantidad debe ser mayor a 0" };
+  }
+
+  // Obtener stock actual del producto
+  const { data: productData, error: productError } = await supabase
+    .from("products")
+    .select("id, stock")
+    .eq("id", productId)
+    .is("deleted_at", null)
+    .single();
+
+  if (productError || !productData) {
+    return { success: false, error: "Producto no encontrado" };
+  }
+
+  const delta = movementType === "entrada" ? quantity : -quantity;
+  const newStock = (productData.stock || 0) + delta;
+
+  if (newStock < 0) {
+    return { success: false, error: "Stock insuficiente" };
   }
 
   const movement = {
@@ -138,6 +161,7 @@ export async function recordInventoryMovement(
     quantity,
     reason: reason || null,
     notes: notes || null,
+    recorded_by: recordedBy || "Sistema",
   };
 
   const { data, error } = await supabase
@@ -149,8 +173,11 @@ export async function recordInventoryMovement(
     return { success: false, error: error.message };
   }
 
-  // Actualizar el stock en la tabla products
-  await updateProductStock(productId);
+  // Actualizar el stock directamente en products
+  await supabase
+    .from("products")
+    .update({ stock: newStock, updated_at: new Date().toISOString(), updated_by: recordedBy || "Sistema" })
+    .eq("id", productId);
 
   revalidatePath("/");
   return { success: true, data };

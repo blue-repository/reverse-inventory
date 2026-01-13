@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { UserProvider } from "@/app/context/UserContext";
+import UserIdentificationModal from "@/app/components/UserIdentificationModal";
+import UserIndicator from "@/app/components/UserIndicator";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,7 +30,18 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <UserProvider>
+          <UserIdentificationModal />
+          <header className="border-b border-slate-200 bg-white">
+            <div className="mx-auto max-w-7xl px-3 sm:px-4 md:px-6 py-3 sm:py-4 flex items-center justify-between">
+              <h1 className="text-lg sm:text-xl font-bold text-slate-900">
+                💊 Farmacia Inventario
+              </h1>
+              <UserIndicator />
+            </div>
+          </header>
+          {children}
+        </UserProvider>
       </body>
     </html>
   );
