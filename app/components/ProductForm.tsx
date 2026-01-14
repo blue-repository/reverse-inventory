@@ -361,6 +361,68 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
             </div>
           </div>
 
+          {/* Sección de Ubicación */}
+          <div className="md:col-span-2 border-t border-slate-200 pt-3 sm:pt-4">
+            <h3 className="text-xs sm:text-sm font-semibold text-slate-900 mb-3">Ubicación</h3>
+            <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-3">
+              {/* Estantería */}
+              <div>
+                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                  Estantería
+                </label>
+                <input
+                  type="text"
+                  name="shelf"
+                  defaultValue={product?.shelf || ""}
+                  placeholder="Ej: A, B, C"
+                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                />
+              </div>
+
+              {/* Cajón */}
+              <div>
+                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                  Cajón/Nivel
+                </label>
+                <input
+                  type="text"
+                  name="drawer"
+                  defaultValue={product?.drawer || ""}
+                  placeholder="Ej: 1, 2, 3"
+                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                />
+              </div>
+
+              {/* Sección */}
+              <div>
+                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                  Sección
+                </label>
+                <input
+                  type="text"
+                  name="section"
+                  defaultValue={product?.section || ""}
+                  placeholder="Ej: Izq, Der"
+                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                />
+              </div>
+
+              {/* Notas de ubicación */}
+              <div className="md:col-span-3">
+                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                  Notas de Ubicación
+                </label>
+                <textarea
+                  name="location_notes"
+                  defaultValue={product?.location_notes || ""}
+                  rows={2}
+                  placeholder="Detalles adicionales sobre la ubicación..."
+                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Notas */}
           <div className="md:col-span-2">
             <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">

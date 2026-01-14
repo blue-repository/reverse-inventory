@@ -23,9 +23,38 @@ export type Product = {
   issue_date?: string | null;
   expiration_date?: string | null;
   image_url?: string | null;
+  shelf?: string | null;
+  drawer?: string | null;
+  section?: string | null;
+  location_notes?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
+};
+
+export type ProductBatch = {
+  id: string;
+  product_id: string;
+  batch_number: string;
+  stock: number;
+  initial_stock: number;
+  issue_date?: string | null;
+  expiration_date: string;
+  shelf?: string | null;
+  drawer?: string | null;
+  section?: string | null;
+  location_notes?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by?: string | null;
+  updated_by?: string | null;
+};
+
+export type ProductWithBatches = Product & {
+  batches?: ProductBatch[];
 };
 
 export type MovementType = "entrada" | "salida" | "ajuste";

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
-import { Product, UNITS_OF_MEASURE } from "@/app/types/product";
-import { updateProduct } from "@/app/actions/products";
+import { Product, ProductBatch } from "@/app/types/product";
+import { getProductBatches } from "@/app/actions/products";
 import InventoryMovementModal from "./InventoryMovementModal";
 import InventoryHistoryModal from "./InventoryHistoryModal";
+import BatchesModal from "./BatchesModal";
 
 type ProductDetailsModalProps = {
   product: Product;
@@ -18,33 +19,27 @@ export default function ProductDetailsModal({
   onClose,
   onEdit,
 }: ProductDetailsModalProps) {
-  const [isEditing, setIsEditing] = useState(false);
   const [showMovementModal, setShowMovementModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [showBatchesModal, setShowBatchesModal] = useState(false);
+  const [batches, setBatches] = useState<ProductBatch[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const loadBatches = async () => {
+    setLoadingBatches(true);
+    const result = await getProductBatches(product.id);
+    setBatches(result.data);
+    setLoadingBatches(false);
+  };
+
+  useEffect(() => {
+    loadBatches();
+  }, [product.id, refreshKey]);
 
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return "—";
     return new Date(dateString).toLocaleDateString("es-EC");
-  };
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setError(null);
-
-    const formData = new FormData(e.currentTarget);
-    const result = await updateProduct(product.id as string, formData);
-
-    setIsSubmitting(false);
-
-    if (result.success) {
-      setIsEditing(false);
-      onClose();
-    } else {
-      setError(result.error || "Error al guardar el producto");
-    }
   };
 
   return (
@@ -70,9 +65,7 @@ export default function ProductDetailsModal({
           </svg>
         </button>
 
-        {!isEditing ? (
-          <>
-            <div className="border-b border-slate-200 px-3 sm:px-4 md:px-6 py-3 sm:py-4">
+        <div className="border-b border-slate-200 px-3 sm:px-4 md:px-6 py-3 sm:py-4">
               <h2 className="text-base sm:text-lg md:text-xl font-bold text-slate-900 pr-8">
                 {product.name}
               </h2>
@@ -186,6 +179,91 @@ export default function ProductDetailsModal({
                 </div>
               </div>
 
+              {/* Sección de Lotes */}
+              <div className="pt-3 sm:pt-4 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                    Lotes ({batches.length})
+                  </p>
+                  <button
+                    onClick={() => setShowBatchesModal(true)}
+                    className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={2}
+                      stroke="currentColor"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6h9m-9-12h9" />
+                    </svg>
+                    Ver todos
+                  </button>
+                </div>
+
+                {loadingBatches ? (
+                  <div className="text-center py-4 text-slate-500">Cargando lotes...</div>
+                ) : (() => {
+                  // Mostrar lotes vencidos, si no hay, mostrar el próximo por vencer
+                  const today = new Date();
+                  
+                  // Filtrar lotes activos y calcular días hasta vencimiento
+                  const activeBatchesWithDays = batches
+                    .filter((batch) => batch.is_active)
+                    .map((batch) => {
+                      const expDate = new Date(batch.expiration_date);
+                      const daysUntil = Math.floor(
+                        (expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+                      );
+                      return { batch, daysUntil };
+                    });
+
+                  // Primero buscar lotes vencidos
+                  let selectedBatchWithDays = activeBatchesWithDays.find((bd) => bd.daysUntil < 0);
+                  
+                  // Si no hay vencidos, buscar el próximo por vencer
+                  if (!selectedBatchWithDays) {
+                    selectedBatchWithDays = activeBatchesWithDays
+                      .filter((bd) => bd.daysUntil >= 0)
+                      .sort((a, b) => a.daysUntil - b.daysUntil)[0];
+                  }
+
+                  if (!selectedBatchWithDays) {
+                    return null; // No mostrar nada si no hay lotes
+                  }
+
+                  const { batch: displayBatch, daysUntil } = selectedBatchWithDays;
+
+                  let statusColor = "bg-green-50 border-green-200 text-green-700";
+                  let statusLabel = "Normal";
+                  if (daysUntil < 0) {
+                    statusColor = "bg-red-50 border-red-200 text-red-700";
+                    statusLabel = "Vencido";
+                  } else if (daysUntil <= 7) {
+                    statusColor = "bg-red-50 border-red-200 text-red-700";
+                    statusLabel = "Crítico";
+                  } else if (daysUntil <= 15) {
+                    statusColor = "bg-yellow-50 border-yellow-200 text-yellow-700";
+                    statusLabel = "Alerta";
+                  }
+
+                  return (
+                    <div className={`border rounded-lg p-2 sm:p-3 ${statusColor}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-xs sm:text-sm">{displayBatch.batch_number}</span>
+                        <span className="text-xs sm:text-sm font-semibold">{displayBatch.stock} unidades</span>
+                      </div>
+                      <div className="text-[11px] sm:text-xs">
+                        {statusLabel}: {formatDate(displayBatch.expiration_date)} ({daysUntil} día{Math.abs(daysUntil) !== 1 ? 's' : ''})
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+              
+
               {product.description && (
                 <div className="pt-3 sm:pt-4 border-t border-slate-200">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
@@ -257,7 +335,10 @@ export default function ProductDetailsModal({
                 Movimiento
               </button>
               <button
-                onClick={() => setIsEditing(true)}
+                onClick={() => {
+                  onEdit(product);
+                  onClose();
+                }}
                 className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white hover:bg-slate-800"
               >
                 <svg
@@ -277,211 +358,38 @@ export default function ProductDetailsModal({
                 Editar
               </button>
             </div>
-          </>
-        ) : (
-          <>
-            <div className="sticky top-0 z-10 border-b border-slate-200 px-3 sm:px-4 md:px-6 py-3 sm:py-4 bg-white rounded-t-xl">
-              <h2 className="text-base sm:text-lg md:text-xl font-bold text-slate-900">
-                Editar Producto
-              </h2>
-            </div>
 
-            <button
-              onClick={() => setIsEditing(false)}
-              className="absolute left-2 top-2 z-10 rounded-full bg-slate-900 p-1.5 sm:p-2 text-white hover:bg-slate-700 transition-colors"
-              aria-label="Atrás"
-              title="Volver"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                stroke="currentColor"
-                className="h-4 w-4 sm:h-5 sm:w-5"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-              </svg>
-            </button>
+            {showMovementModal && (
+              <InventoryMovementModal
+                product={product}
+                onClose={() => setShowMovementModal(false)}
+                onSuccess={() => {
+                  setShowMovementModal(false);
+                  setRefreshKey((prev) => prev + 1);
+                }}
+              />
+            )}
 
-            <form onSubmit={handleSubmit} className="p-3 sm:p-4 md:p-6">
-              {error && (
-                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-red-800">
-                  {error}
-                </div>
-              )}
+            {showHistoryModal && (
+              <InventoryHistoryModal
+                product={product}
+                onClose={() => setShowHistoryModal(false)}
+              />
+            )}
 
-              <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                    Nombre <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    defaultValue={product?.name}
-                    required
-                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  />
-                </div>
-
-                <div className="sm:col-span-1">
-                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                    Código de Barras
-                  </label>
-                  <input
-                    type="text"
-                    name="barcode"
-                    defaultValue={product?.barcode || ""}
-                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  />
-                </div>
-
-                <div className="sm:col-span-1">
-                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                    Stock <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    name="stock"
-                    defaultValue={product?.stock || 0}
-                    min="0"
-                    required
-                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  />
-                </div>
-
-                <div className="sm:col-span-1">
-                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                    Unidad de Medida
-                  </label>
-                  <select
-                    name="unit_of_measure"
-                    defaultValue={product?.unit_of_measure || ""}
-                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  >
-                    <option value="">Seleccionar...</option>
-                    {UNITS_OF_MEASURE.map((unit) => (
-                      <option key={unit} value={unit}>
-                        {unit}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="sm:col-span-1">
-                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                    Vía de Administración
-                  </label>
-                  <input
-                    type="text"
-                    name="administration_route"
-                    defaultValue={product?.administration_route || ""}
-                    placeholder="Ej: Oral, Tópica, IV"
-                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                    Descripción
-                  </label>
-                  <textarea
-                    name="description"
-                    defaultValue={product?.description || ""}
-                    rows={3}
-                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  />
-                </div>
-
-                <div className="sm:col-span-1">
-                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                    Fecha de Expedición
-                  </label>
-                  <input
-                    type="date"
-                    name="issue_date"
-                    defaultValue={product?.issue_date || ""}
-                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  />
-                </div>
-
-                <div className="sm:col-span-1">
-                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                    Fecha de Expiración
-                  </label>
-                  <input
-                    type="date"
-                    name="expiration_date"
-                    defaultValue={product?.expiration_date || ""}
-                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                    URL de Imagen
-                  </label>
-                  <input
-                    type="url"
-                    name="image_url"
-                    defaultValue={product?.image_url || ""}
-                    placeholder="https://ejemplo.com/imagen.jpg"
-                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                    Notas / Observaciones
-                  </label>
-                  <textarea
-                    name="notes"
-                    defaultValue={product?.notes || ""}
-                    rows={2}
-                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-4 sm:mt-6 flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 border-t border-slate-200 pt-3 sm:pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(false)}
-                  disabled={isSubmitting}
-                  className="w-full sm:w-auto rounded-lg border border-slate-300 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full sm:w-auto rounded-lg bg-slate-900 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-                >
-                  {isSubmitting ? "Guardando..." : "Guardar"}
-                </button>
-              </div>
-            </form>
-          </>
-        )}
-
-        {showMovementModal && (
-          <InventoryMovementModal
-            product={product}
-            onClose={() => setShowMovementModal(false)}
-            onSuccess={() => {
-              setShowMovementModal(false);
-            }}
-          />
-        )}
-
-        {showHistoryModal && (
-          <InventoryHistoryModal
-            product={product}
-            onClose={() => setShowHistoryModal(false)}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
+            {showBatchesModal && (
+              <BatchesModal
+                productId={product.id}
+                productName={product.name}
+                batches={batches}
+                onClose={() => setShowBatchesModal(false)}
+                onRefresh={async () => {
+                  const result = await getProductBatches(product.id);
+                  setBatches(result.data);
+                }}
+              />
+            )}
+          </div>
+        </div>
+      );
+    }

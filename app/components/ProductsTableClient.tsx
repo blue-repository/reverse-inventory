@@ -6,8 +6,9 @@ import { Product } from "@/app/types/product";
 import { deleteProduct } from "@/app/actions/products";
 import ProductForm from "@/app/components/ProductForm";
 import ProductDetailsModal from "@/app/components/ProductDetailsModal";
-import QuickInventoryModal from "@/app/components/QuickInventoryModal";
+import BulkMovementModal from "@/app/components/BulkMovementModal";
 import BarcodeScannerModal from "@/app/components/BarcodeScannerModal";
+import DeleteConfirmModal from "@/app/components/DeleteConfirmModal";
 import Image from "next/image";
 
 type ProductsTableClientProps = {
@@ -28,15 +29,17 @@ export default function ProductsTableClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
-  const [showQuickInventory, setShowQuickInventory] = useState(false);
+  const [showBulkMovement, setShowBulkMovement] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
-  const [scannerIntent, setScannerIntent] = useState<"search" | "select">("select");
   const [editingProduct, setEditingProduct] = useState<Product | undefined>();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [showReportMenu, setShowReportMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const reportMenuRef = useRef<HTMLDivElement | null>(null);
 
   const handleSearch = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -70,6 +73,22 @@ export default function ProductsTableClient({
       }
     };
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (reportMenuRef.current && !reportMenuRef.current.contains(event.target as Node)) {
+        setShowReportMenu(false);
+      }
+    };
+
+    if (showReportMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showReportMenu]);
 
   const handlePageSizeChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -135,16 +154,45 @@ export default function ProductsTableClient({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("¿Estás seguro de eliminar este producto?")) return;
-
     setDeletingId(id);
-    await deleteProduct(id);
+    const result = await deleteProduct(id);
     setDeletingId(null);
+    setProductToDelete(null);
+    
+    if (!result.success) {
+      alert(`Error al eliminar: ${result.error}`);
+    }
   };
 
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return "—";
     return new Date(dateString).toLocaleDateString("es-EC");
+  };
+
+  const downloadReport = async (reportType: "productos" | "lotes-por-vencer") => {
+    try {
+      const endpoints: { [key: string]: string } = {
+        productos: "/api/reporte/productos",
+        "lotes-por-vencer": "/api/reporte/lotes-por-vencer",
+      };
+
+      const response = await fetch(endpoints[reportType]);
+      if (!response.ok) throw new Error("Error al descargar reporte");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `reporte-${reportType}-${new Date().toISOString().split("T")[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setShowReportMenu(false);
+    } catch (error) {
+      alert("Error al descargar el reporte");
+      console.error(error);
+    }
   };
 
   const totalPages = Math.ceil(totalCount / pageSize);
@@ -163,10 +211,7 @@ export default function ProductsTableClient({
             />
             <button
               type="button"
-              onClick={() => {
-                setScannerIntent("search");
-                setShowScanner(true);
-              }}
+              onClick={() => setShowScanner(true)}
               className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md bg-slate-900 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-slate-800"
               aria-label="Escanear para buscar"
             >
@@ -174,41 +219,17 @@ export default function ProductsTableClient({
             </button>
           </div>
         </div>
-        <div className="flex gap-2 sm:gap-3">
+        <div className="flex gap-2 sm:gap-3 flex-wrap">
           <button
-            onClick={() => {
-              setScannerIntent("select");
-              setShowScanner(true);
-            }}
-            className="flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2 sm:py-2.5 text-sm font-medium text-white hover:bg-purple-700 transition-colors whitespace-nowrap flex-1 sm:flex-initial"
-            title="Escanear código de barras o QR"
+            onClick={() => setShowBulkMovement(true)}
+            className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
+            title="Registrar movimiento masivo de inventario"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
-              strokeWidth={2}
-              stroke="currentColor"
-              className="h-5 w-5"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M3 4.5h14.25M3 9h14.25M3 13.5h14.25M17.6 2.5a2.4 2.4 0 1 1 4.8 0 2.4 2.4 0 0 1-4.8 0ZM3 21.75a6.75 6.75 0 0 1 13.5 0"
-              />
-            </svg>
-            <span className="hidden xs:inline">Escanear</span>
-            <span className="xs:hidden">📸</span>
-          </button>
-          <button
-            onClick={() => setShowQuickInventory(true)}
-            className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 sm:py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors whitespace-nowrap flex-1 sm:flex-initial"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={2}
+              strokeWidth={2.5}
               stroke="currentColor"
               className="h-5 w-5"
             >
@@ -218,26 +239,137 @@ export default function ProductsTableClient({
                 d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"
               />
             </svg>
-            <span className="hidden xs:inline">Movimiento Rápido</span>
-            <span className="xs:hidden">Movimiento</span>
+            Movimiento
           </button>
           <button
             onClick={handleCreate}
-            className="flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 sm:py-2.5 text-sm font-medium text-white hover:bg-slate-800 transition-colors whitespace-nowrap flex-1 sm:flex-initial"
+            className="flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 transition-colors shadow-md hover:shadow-lg"
+            title="Crear nuevo producto"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
-              strokeWidth={2}
+              strokeWidth={2.5}
               stroke="currentColor"
               className="h-5 w-5"
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            <span className="hidden xs:inline">Nuevo Producto</span>
-            <span className="xs:hidden">Nuevo</span>
+            Nuevo
           </button>
+          <div className="relative" ref={reportMenuRef}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowReportMenu(!showReportMenu);
+              }}
+              className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors shadow-md hover:shadow-lg"
+              title="Descargar reportes"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2.5}
+                stroke="currentColor"
+                className="h-5 w-5"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                />
+              </svg>
+              Reportes
+            </button>
+
+            {/* Dropdown Menu */}
+            {showReportMenu && (
+              <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg border border-slate-200 shadow-lg z-10 overflow-hidden">
+                <div className="p-2">
+                  <button
+                    onClick={() => downloadReport("productos")}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-100 transition-colors text-left text-sm text-slate-700 hover:text-slate-900"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-5 w-5 text-green-600"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 12.75h.008v.008H9.75V12.75zm0 2.25h.008v.008H9.75v-.008zm0 2.25h.008v.008H9.75v-.008zm0 2.25h.008v.008H9.75v-.008zM12 12.75h.008v.008H12V12.75zm0 2.25h.008v.008H12v-.008zm0 2.25h.008v.008H12v-.008zm0 2.25h.008v.008H12v-.008zm7.5-7.5h.008v.008H19.5v-.008zm0 2.25h.008v.008H19.5v-.008zm0 2.25h.008v.008H19.5v-.008zm0 2.25h.008v.008H19.5v-.008z"
+                      />
+                    </svg>
+                    <div>
+                      <p className="font-medium">Productos</p>
+                      <p className="text-xs text-slate-500">Stock actual de cada producto</p>
+                    </div>
+                  </button>
+
+                  {/* Separador para próximos reportes */}
+                  <div className="border-t border-slate-200 my-2"></div>
+
+                  {/* Reporte de Lotes por Vencer */}
+                  <button
+                    onClick={() => downloadReport("lotes-por-vencer")}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-100 transition-colors text-left text-sm text-slate-700 hover:text-slate-900"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-5 w-5 text-yellow-600"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                      />
+                    </svg>
+                    <div>
+                      <p className="font-medium">Lotes por Vencer</p>
+                      <p className="text-xs text-slate-500">Próximos 30 días</p>
+                    </div>
+                  </button>
+
+                  {/* Separador para próximos reportes */}
+                  <div className="border-t border-slate-200 my-2"></div>
+
+                  {/* Próximos reportes (deshabilitados) */}
+                  <div className="px-3 py-2 opacity-50 pointer-events-none">
+                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm text-slate-500">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        className="h-5 w-5 text-slate-400"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a60.59 60.59 0 015.56 0m-.84 1.409a60.59 60.59 0 00-5.56 0m.12 0a60 60 0 015.32 8.362m-5.32-8.362a8.967 8.967 0 018.963 8.963"
+                        />
+                      </svg>
+                      <div>
+                        <p className="font-medium">Próximamente...</p>
+                        <p className="text-xs">Más reportes disponibles</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -252,7 +384,7 @@ export default function ProductsTableClient({
                 <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden lg:table-cell">Unidad</th>
                 <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden xl:table-cell">Vía Admin.</th>
                 <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden lg:table-cell">Expiración</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold">Acciones</th>
+                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold w-1 whitespace-nowrap">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -288,7 +420,7 @@ export default function ProductsTableClient({
                       {formatDate(product.expiration_date)}
                     </td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3">
-                      <div className="flex gap-1 sm:gap-2 flex-wrap">
+                      <div className="flex gap-1 sm:gap-2">
                         <div className="group relative">
                           <button
                             disabled={!product.image_url}
@@ -370,7 +502,7 @@ export default function ProductsTableClient({
                           </svg>
                         </button>
                         <button
-                          onClick={() => handleDelete(product.id)}
+                          onClick={() => setProductToDelete(product)}
                           disabled={deletingId === product.id}
                           className="rounded-lg border border-red-300 p-1.5 sm:p-2 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
                           title="Eliminar"
@@ -498,28 +630,20 @@ export default function ProductsTableClient({
       {showForm && <ProductForm product={editingProduct} onClose={handleCloseForm} />}
       {showScanner && (
         <BarcodeScannerModal
-          mode={scannerIntent === "search" ? "code" : "product"}
+          mode="code"
           onClose={() => setShowScanner(false)}
           onCodeScanned={(code) => {
             applySearchFromCode(code);
             setShowScanner(false);
-            setScannerIntent("select");
           }}
-          onSelectProduct={
-            scannerIntent === "search"
-              ? undefined
-              : (product) => {
-                  setSelectedProduct(product);
-                  setShowScanner(false);
-                  setScannerIntent("select");
-                }
-          }
+          onSelectProduct={undefined}
         />
       )}
-      {showQuickInventory && (
-        <QuickInventoryModal
-          onClose={() => setShowQuickInventory(false)}
-          onSuccess={() => setShowQuickInventory(false)}
+      {showBulkMovement && (
+        <BulkMovementModal
+          products={products}
+          onClose={() => setShowBulkMovement(false)}
+          onSuccess={() => setShowBulkMovement(false)}
         />
       )}
       {selectedProduct && (
@@ -527,6 +651,14 @@ export default function ProductsTableClient({
           product={selectedProduct}
           onClose={() => setSelectedProduct(null)}
           onEdit={handleEdit}
+        />
+      )}
+      {productToDelete && (
+        <DeleteConfirmModal
+          productName={productToDelete.name}
+          onConfirm={() => handleDelete(productToDelete.id)}
+          onCancel={() => setProductToDelete(null)}
+          isDeleting={deletingId === productToDelete.id}
         />
       )}
     </>
