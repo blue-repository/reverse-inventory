@@ -21,6 +21,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>(product?.image_url || "");
   const [imageLoading, setImageLoading] = useState(true);
+  const [imageToDelete, setImageToDelete] = useState<string | null>(null);
 
   const readFileAsDataURL = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -118,9 +119,15 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
     try {
       let finalImageUrl = product?.image_url || "";
 
+      // Si hay una imagen marcada para eliminar, eliminarla del bucket
+      if (imageToDelete) {
+        await deleteOldImage(imageToDelete);
+        finalImageUrl = "";
+      }
+
       if (imageFile) {
         // Si estamos editando y hay una imagen anterior distinta, eliminarla
-        if (product && product.image_url && product.image_url !== imagePreview) {
+        if (product && product.image_url && product.image_url !== imagePreview && !imageToDelete) {
           await deleteOldImage(product.image_url);
         }
         finalImageUrl = await uploadImage(imageFile);
@@ -334,6 +341,10 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
                   <button
                     type="button"
                     onClick={() => {
+                      // Si hay una imagen del producto original, marcarla para eliminación
+                      if (product?.image_url && imagePreview === product.image_url) {
+                        setImageToDelete(product.image_url);
+                      }
                       setImageFile(null);
                       setImagePreview("");
                       setImageLoading(true);
