@@ -69,6 +69,7 @@ export type InventoryMovement = {
   quantity: number;
   reason?: string | null;
   notes?: string | null;
+  reporting_unit?: string | null;
   created_at: string;
   updated_at: string;
 };
