@@ -8,6 +8,7 @@ import DeleteBatchModal from "./DeleteBatchModal";
 type BatchesModalProps = {
   productId: string;
   productName: string;
+  productCategory?: string | null;
   batches: ProductBatch[];
   onClose: () => void;
   onRefresh: () => void;
@@ -16,6 +17,7 @@ type BatchesModalProps = {
 export default function BatchesModal({
   productId,
   productName,
+  productCategory,
   batches,
   onClose,
   onRefresh,
@@ -84,9 +86,16 @@ export default function BatchesModal({
         </button>
 
         <div className="border-b border-slate-200 px-3 sm:px-4 md:px-6 py-3 sm:py-4">
-          <h2 className="text-base sm:text-lg md:text-xl font-bold text-slate-900 pr-8">
-            Lotes - {productName}
-          </h2>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <h2 className="text-base sm:text-lg md:text-xl font-bold text-slate-900 pr-8">
+              Lotes - {productName}
+            </h2>
+            {productCategory && (
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800 w-fit">
+                {productCategory}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="p-3 sm:p-4 md:p-6 space-y-6">

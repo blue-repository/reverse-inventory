@@ -375,14 +375,16 @@ export default function ProductsTableClient({
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="overflow-x-auto -mx-px">
-          <table className="w-full text-left text-xs sm:text-sm min-w-[640px]">
+          <table className="w-full text-left text-xs sm:text-sm min-w-[740px]">
             <thead className="bg-slate-900 text-slate-50">
               <tr>
                 <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold">Nombre</th>
                 <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden md:table-cell">Código</th>
                 <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold">Stock</th>
+                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden md:table-cell">Categoría</th>
+                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden lg:table-cell">Especialidad</th>
                 <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden lg:table-cell">Unidad</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden xl:table-cell">Vía Admin.</th>
+                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden xl:table-cell">Unidad Reporte</th>
                 <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden lg:table-cell">Expiración</th>
                 <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold w-1 whitespace-nowrap">Acciones</th>
               </tr>
@@ -393,8 +395,20 @@ export default function ProductsTableClient({
                   <tr key={product.id} className="odd:bg-white even:bg-slate-50 hover:bg-slate-100">
                     <td className="px-2 sm:px-4 py-2 sm:py-3">
                       <div className="font-medium text-slate-900">{product.name}</div>
-                      <div className="md:hidden text-xs text-slate-500 mt-0.5">
-                        {product.barcode || "Sin código"}
+                      <div className="md:hidden text-xs text-slate-500 mt-0.5 space-y-0.5">
+                        <div>{product.barcode || "Sin código"}</div>
+                        <div className="flex flex-wrap gap-1">
+                          {product.category && (
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">
+                              {product.category}
+                            </span>
+                          )}
+                          {product.specialty && (
+                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-700">
+                              {product.specialty}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden md:table-cell">{product.barcode || "—"}</td>
@@ -412,55 +426,21 @@ export default function ProductsTableClient({
                         Init: {product.stock_inicial}
                       </div>
                     </td>
+                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden md:table-cell whitespace-nowrap">
+                      {product.category || "—"}
+                    </td>
+                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden lg:table-cell whitespace-nowrap">
+                      {product.specialty || "—"}
+                    </td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden lg:table-cell">{product.unit_of_measure || "—"}</td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden xl:table-cell">
-                      {product.administration_route || "—"}
+                      {product.reporting_unit || "—"}
                     </td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden lg:table-cell">
                       {formatDate(product.expiration_date)}
                     </td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3">
                       <div className="flex gap-1 sm:gap-2">
-                        <div className="group relative">
-                          <button
-                            disabled={!product.image_url}
-                            className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg border transition-colors ${
-                              product.image_url
-                                ? "border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 cursor-default"
-                                : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                            }`}
-                            title={product.image_url ? "Ver imagen" : "Sin imagen"}
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              strokeWidth={1.5}
-                              stroke="currentColor"
-                              className="h-3.5 w-3.5 sm:h-4 sm:w-4"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-6-6.5l5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-6-6.5l5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-6-6.5a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0z"
-                              />
-                            </svg>
-                          </button>
-                          {/* Tooltip preview - hidden on mobile */}
-                          {product.image_url && (
-                            <div className="pointer-events-none absolute left-10 sm:left-12 top-1/2 -translate-y-1/2 z-50 hidden lg:group-hover:block rounded-lg border border-slate-300 bg-white p-2 shadow-2xl">
-                              <div className="relative h-32 w-32 overflow-hidden rounded">
-                                <Image
-                                  src={product.image_url}
-                                  alt={product.name}
-                                  fill
-                                  className="object-cover"
-                                  sizes="128px"
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
                         <button
                           onClick={() => setSelectedProduct(product)}
                           className="rounded-lg border border-slate-300 p-1.5 sm:p-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"

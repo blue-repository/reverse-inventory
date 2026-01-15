@@ -27,6 +27,9 @@ export type Product = {
   drawer?: string | null;
   section?: string | null;
   location_notes?: string | null;
+  category?: string | null;
+  specialty?: string | null;
+  reporting_unit?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;

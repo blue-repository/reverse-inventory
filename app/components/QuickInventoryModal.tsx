@@ -375,16 +375,16 @@ export default function QuickInventoryModal({
           </form>
         </div>
       </div>
+      
+      {/* Scanner Modal - Renderizado a nivel superior */}
       {showScanner && (
-        <div onClick={(e) => e.stopPropagation()}>
-          <BarcodeScannerModal
-            onClose={() => setShowScanner(false)}
-            onSelectProduct={(product) => {
-              handleSelectProduct(product);
-              setShowScanner(false);
-            }}
-          />
-        </div>
+        <BarcodeScannerModal
+          onClose={() => setShowScanner(false)}
+          onSelectProduct={(product) => {
+            handleSelectProduct(product);
+            setShowScanner(false);
+          }}
+        />
       )}
     </div>
   );

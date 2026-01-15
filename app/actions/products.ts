@@ -73,6 +73,9 @@ export async function createProduct(formData: FormData, createdBy?: string) {
     drawer: formData.get("drawer") as string || null,
     section: formData.get("section") as string || null,
     location_notes: formData.get("location_notes") as string || null,
+    category: formData.get("category") as string || null,
+    specialty: formData.get("specialty") as string || null,
+    reporting_unit: formData.get("reporting_unit") as string || null,
     created_by: createdBy || "Sistema",
     updated_by: createdBy || "Sistema",
   };
@@ -132,6 +135,9 @@ export async function updateProduct(id: string, formData: FormData, updatedBy?: 
     drawer: formData.get("drawer") as string || null,
     section: formData.get("section") as string || null,
     location_notes: formData.get("location_notes") as string || null,
+    category: formData.get("category") as string || null,
+    specialty: formData.get("specialty") as string || null,
+    reporting_unit: formData.get("reporting_unit") as string || null,
     updated_by: updatedBy || "Sistema",
   };
 
