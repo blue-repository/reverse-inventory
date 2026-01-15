@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Product, MovementType } from "@/app/types/product";
-import { recordInventoryMovement } from "@/app/actions/products";
+import { recordInventoryMovement, createBatch } from "@/app/actions/products";
 import { useUser } from "@/app/context/UserContext";
 
 type InventoryMovementModalProps = {
@@ -27,8 +27,27 @@ export default function InventoryMovementModal({
   const [quantity, setQuantity] = useState<string>("");
   const [reason, setReason] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
+  
+  // Campos para lotes (entrada)
+  const [batchNumber, setBatchNumber] = useState<string>("");
+  const [issueDate, setIssueDate] = useState<string>("");
+  const [expirationDate, setExpirationDate] = useState<string>("");
+  const [shelf, setShelf] = useState<string>("");
+  const [drawer, setDrawer] = useState<string>("");
+  const [section, setSection] = useState<string>("");
+  const [locationNotes, setLocationNotes] = useState<string>("");
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const generateBatchNumber = () => {
+    const date = new Date();
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
+    const random = Math.floor(Math.random() * 1000)
+      .toString()
+      .padStart(3, "0");
+    setBatchNumber(`LOTE-${dateStr}-${random}`);
+  };
 
   const reasons = MOVEMENT_REASONS[movementType];
 
@@ -48,27 +67,76 @@ export default function InventoryMovementModal({
       return;
     }
 
+    // Validaciones para entrada (lote)
+    if (movementType === "entrada") {
+      if (!batchNumber.trim()) {
+        setError("Genera o ingresa el número de lote");
+        return;
+      }
+      if (!expirationDate) {
+        setError("Ingresa la fecha de vencimiento");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
-    const result = await recordInventoryMovement(
-      product.id as string,
-      movementType,
-      qty,
-      reason || undefined,
-      notes || undefined,
-      currentUser || undefined
-    );
+    try {
+      // Si es entrada, crear el lote primero
+      if (movementType === "entrada") {
+        const formData = new FormData();
+        formData.append("batch_number", batchNumber);
+        formData.append("stock", quantity);
+        formData.append("issue_date", issueDate);
+        formData.append("expiration_date", expirationDate);
+        formData.append("shelf", shelf);
+        formData.append("drawer", drawer);
+        formData.append("section", section);
+        formData.append("location_notes", locationNotes);
 
-    setIsSubmitting(false);
+        const batchResult = await createBatch(
+          product.id,
+          formData,
+          currentUser || undefined
+        );
 
-    if (result.success) {
+        if (!batchResult.success) {
+          throw new Error(batchResult.error || "Error al crear el lote");
+        }
+      } else {
+        // Para salidas y ajustes, registrar movimiento normal
+        const result = await recordInventoryMovement(
+          product.id as string,
+          movementType,
+          qty,
+          reason || undefined,
+          notes || undefined,
+          currentUser || undefined
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || "Error al registrar el movimiento");
+        }
+      }
+
+      // Limpiar formulario
       setQuantity("");
       setReason("");
       setNotes("");
+      setBatchNumber("");
+      setIssueDate("");
+      setExpirationDate("");
+      setShelf("");
+      setDrawer("");
+      setSection("");
+      setLocationNotes("");
+      
       onSuccess?.();
       onClose();
-    } else {
-      setError(result.error || "Error al registrar el movimiento");
+    } catch (err: any) {
+      setError(err.message || "Error al procesar la solicitud");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -100,12 +168,12 @@ export default function InventoryMovementModal({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md bg-white rounded-xl shadow-2xl my-4 sm:my-8"
+        className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl my-2 sm:my-4 max-h-[95vh] overflow-y-auto flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          className="absolute right-2 top-2 rounded-full bg-slate-900 p-1.5 sm:p-2 text-white hover:bg-slate-700 transition-colors"
+          className="absolute right-2 top-2 z-10 rounded-full bg-slate-900 p-1.5 sm:p-2 text-white hover:bg-slate-700 transition-colors"
           aria-label="Cerrar"
         >
           <svg
@@ -120,21 +188,21 @@ export default function InventoryMovementModal({
           </svg>
         </button>
 
-        <div className="border-b border-slate-200 px-3 sm:px-4 md:px-6 py-3 sm:py-4">
-          <h2 className="text-base sm:text-lg md:text-xl font-bold text-slate-900">
+        <div className="border-b border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3">
+          <h2 className="text-base sm:text-lg font-bold text-slate-900">
             Registrar Movimiento
           </h2>
-          <p className="mt-1 text-xs sm:text-sm text-slate-600">{product.name}</p>
+          <p className="mt-0.5 text-xs sm:text-sm text-slate-600">{product.name}</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col p-3 sm:p-4 space-y-2.5 sm:space-y-3">
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-red-800">
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs sm:text-sm text-red-800">
               {error}
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
             {(["entrada", "salida", "ajuste"] as MovementType[]).map((type) => (
               <button
                 key={type}
@@ -143,7 +211,7 @@ export default function InventoryMovementModal({
                   setMovementType(type);
                   setReason("");
                 }}
-                className={`rounded-lg border-2 px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold transition-all ${
+                className={`rounded-lg border-2 px-2 py-1.5 sm:py-2 text-xs font-semibold transition-all ${
                   movementType === type
                     ? getTypeColor(type) + " border-current"
                     : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
@@ -173,37 +241,184 @@ export default function InventoryMovementModal({
             />
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-              Motivo <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-              required
-            >
-              <option value="">Seleccionar motivo...</option>
-              {reasons.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Campos específicos para ENTRADA (Lote) */}
+          {movementType === "entrada" && (
+            <>
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 sm:p-3">
+                <p className="text-xs font-semibold text-emerald-900 mb-2">Datos del Lote</p>
 
-          <div>
-            <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-              Notas (Opcional)
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ej: Referencia de documento, observaciones..."
-              rows={2}
-              className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-            />
-          </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                      Número de Lote
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={batchNumber}
+                        onChange={(e) => setBatchNumber(e.target.value)}
+                        placeholder="Generar o ingresar..."
+                        className="flex-1 rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={generateBatchNumber}
+                        className="rounded-lg bg-blue-600 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white hover:bg-blue-700 transition-colors whitespace-nowrap"
+                        title="Generar número de lote automático"
+                      >
+                        Generar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                        Fecha de Expedición
+                      </label>
+                      <input
+                        type="date"
+                        value={issueDate}
+                        onChange={(e) => setIssueDate(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                        Fecha de Vencimiento <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={expirationDate}
+                        onChange={(e) => setExpirationDate(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-emerald-200">
+                    <p className="text-xs font-semibold text-slate-700 mb-2">Ubicación del Lote</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="mb-1 block text-[11px] text-slate-600">Estantería</label>
+                        <input
+                          type="text"
+                          value={shelf}
+                          onChange={(e) => setShelf(e.target.value)}
+                          placeholder="A, B, C..."
+                          className="w-full rounded-lg border border-slate-300 px-2 sm:px-2.5 py-1 sm:py-1.5 text-xs focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] text-slate-600">Cajón/Nivel</label>
+                        <input
+                          type="text"
+                          value={drawer}
+                          onChange={(e) => setDrawer(e.target.value)}
+                          placeholder="1, 2, 3..."
+                          className="w-full rounded-lg border border-slate-300 px-2 sm:px-2.5 py-1 sm:py-1.5 text-xs focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] text-slate-600">Sección</label>
+                        <input
+                          type="text"
+                          value={section}
+                          onChange={(e) => setSection(e.target.value)}
+                          placeholder="Izq, Der, Cen..."
+                          className="w-full rounded-lg border border-slate-300 px-2 sm:px-2.5 py-1 sm:py-1.5 text-xs focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-2">
+                      <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                        Notas de Ubicación
+                      </label>
+                      <textarea
+                        value={locationNotes}
+                        onChange={(e) => setLocationNotes(e.target.value)}
+                        placeholder="Ubicación específica o referencias..."
+                        rows={2}
+                        className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                  Motivo <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                  required
+                >
+                  <option value="">Seleccionar motivo...</option>
+                  {reasons.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                  Notas (Opcional)
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Observaciones adicionales..."
+                  rows={2}
+                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Para SALIDA y AJUSTE */}
+          {movementType !== "entrada" && (
+            <>
+              <div>
+                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                  Motivo <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                  required
+                >
+                  <option value="">Seleccionar motivo...</option>
+                  {reasons.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                  Notas (Opcional)
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Ej: Referencia de documento, observaciones..."
+                  rows={2}
+                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                />
+              </div>
+            </>
+          )}
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 sm:p-3">
             <div className="grid grid-cols-2 gap-2 text-xs">
@@ -218,21 +433,42 @@ export default function InventoryMovementModal({
             </div>
           </div>
 
-          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 border-t border-slate-200 pt-3 sm:pt-4">
+          {/* Información sobre lotes para entradas y salidas */}
+          {(movementType === "entrada" || movementType === "salida") && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-2.5 sm:p-3 text-xs sm:text-sm">
+              {movementType === "entrada" ? (
+                <div>
+                  <p className="font-semibold text-blue-900 mb-2">📦 Crear nuevo lote</p>
+                  <p className="text-blue-700">Este ingreso creará un nuevo lote con los datos especificados arriba. El número de lote se generará automáticamente si lo dejas en blanco.</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="font-semibold text-blue-900 mb-2">📤 Salida de inventario</p>
+                  <p className="text-blue-700">El sistema utilizará el método FEFO (First Expired, First Out). Se utilizarán primero los lotes que vencen antes.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-auto border-t border-slate-200 pt-2.5 sm:pt-3 flex flex-col-reverse sm:flex-row gap-2 justify-end">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="w-full sm:w-auto rounded-lg border border-slate-300 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="w-full sm:w-auto rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full sm:w-auto rounded-lg bg-slate-900 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+              className="w-full sm:w-auto rounded-lg bg-slate-900 px-3 py-2 text-xs sm:text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              {isSubmitting ? "Registrando..." : "Registrar Movimiento"}
+              {isSubmitting 
+                ? "Procesando..." 
+                : movementType === "entrada" 
+                  ? "Crear Lote" 
+                  : "Registrar Movimiento"}
             </button>
           </div>
         </form>

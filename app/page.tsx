@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { supabase } from "@/app/lib/conections/supabase";
 import { Product } from "@/app/types/product";
 import ProductsTable from "@/app/components/ProductsTable";
+import RefreshButton from "@/app/components/RefreshButton";
 import { searchProducts } from "@/app/actions/products";
 
 async function ProductsContent({
@@ -54,6 +55,7 @@ export default async function Home({
             </p>
             <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Productos - Farmacia</h1>
           </div>
+          <RefreshButton />
         </div>
 
         <Suspense fallback={<div className="py-6 text-center text-slate-600">Cargando...</div>}>
