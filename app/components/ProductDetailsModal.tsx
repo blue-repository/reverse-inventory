@@ -108,33 +108,34 @@ export default function ProductDetailsModal({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    Código de Barras
-                  </p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">
-                    {product.barcode || "—"}
-                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Código de Barras</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{product.barcode || "—"}</p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {product.category && (
+                    <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800">
+                      {product.category}
+                    </span>
+                  )}
+                  {product.specialty && (
+                    <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                      {product.specialty}
+                    </span>
+                  )}
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    Stock Inicial
-                  </p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">
-                    {product.stock_inicial} unidades
-                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Stock Inicial</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{product.stock_inicial} unidades</p>
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    Stock Actual
-                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Stock Actual</p>
                   <p className="mt-1">
                     <span
                       className={`inline-flex items-center rounded-full px-2.5 sm:px-3 py-0.5 sm:py-1 text-xs font-semibold ${
-                        product.stock > 0
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-amber-100 text-amber-800"
+                        product.stock > 0 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
                       }`}
                     >
                       {product.stock} unidades
@@ -143,39 +144,30 @@ export default function ProductDetailsModal({
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    Unidad de Medida
-                  </p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">
-                    {product.unit_of_measure || "—"}
-                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Unidad de Medida</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{product.unit_of_measure || "—"}</p>
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    Vía de Administración
-                  </p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">
-                    {product.administration_route || "—"}
-                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Unidad de Reporte</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{product.reporting_unit || "—"}</p>
+                </div>
+
+                {product.category === "Medicamentos" && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Vía de Administración</p>
+                    <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{product.administration_route || "—"}</p>
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha de Expedición</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{formatDate(product.issue_date)}</p>
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    Fecha de Expedición
-                  </p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">
-                    {formatDate(product.issue_date)}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    Fecha de Expiración
-                  </p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">
-                    {formatDate(product.expiration_date)}
-                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha de Expiración</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{formatDate(product.expiration_date)}</p>
                 </div>
               </div>
 
@@ -381,6 +373,7 @@ export default function ProductDetailsModal({
               <BatchesModal
                 productId={product.id}
                 productName={product.name}
+                productCategory={product.category}
                 batches={batches}
                 onClose={() => setShowBatchesModal(false)}
                 onRefresh={async () => {

@@ -88,7 +88,26 @@ export default function InventoryHistoryModal({
           <h2 className="text-base sm:text-lg md:text-xl font-bold text-slate-900 pr-8">
             Historial de Movimientos
           </h2>
-          <p className="mt-1 text-xs sm:text-sm text-slate-600">{product.name}</p>
+          <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2 text-xs sm:text-sm text-slate-600">
+            <span className="font-medium text-slate-800">{product.name}</span>
+            <div className="flex flex-wrap gap-1.5">
+              {product.category && (
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold text-slate-800">
+                  {product.category}
+                </span>
+              )}
+              {product.specialty && (
+                <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold text-amber-800">
+                  {product.specialty}
+                </span>
+              )}
+              {product.unit_of_measure && (
+                <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold text-blue-800">
+                  {product.unit_of_measure}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="p-3 sm:p-4 md:p-6">
@@ -139,6 +158,11 @@ export default function InventoryHistoryModal({
                           </p>
                           {movement.reason && (
                             <p className="text-xs text-slate-600">• {movement.reason}</p>
+                          )}
+                          {movement.reporting_unit && (
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] sm:text-xs font-semibold text-slate-700">
+                              {movement.reporting_unit}
+                            </span>
                           )}
                         </div>
                         <p className="text-xs text-slate-500 mt-1">

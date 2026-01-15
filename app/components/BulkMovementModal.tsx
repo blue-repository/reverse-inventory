@@ -218,8 +218,10 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   const activateReasons = MOVEMENT_REASONS[movementType];
   const itemsWithQuantity = items.filter((item) => item.quantity > 0);
 
-  // Detectar clics fuera del modal
+  // Detectar clics fuera del modal (solo si no hay scanner abierto)
   useEffect(() => {
+    if (showScanner) return; // No cerrar si el scanner está abierto
+    
     const handleClickOutside = (event: MouseEvent) => {
       if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
         onClose();
@@ -228,14 +230,15 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [onClose]);
+  }, [onClose, showScanner]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
-      <div
-        ref={modalRef}
-        className="w-full max-w-3xl max-h-[95vh] rounded-lg bg-white shadow-lg flex flex-col overflow-hidden"
-      >
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
+        <div
+          ref={modalRef}
+          className="w-full max-w-3xl max-h-[95vh] rounded-lg bg-white shadow-lg flex flex-col overflow-hidden"
+        >
         <form onSubmit={handleSubmit} className="flex flex-col h-full">
           {/* Header */}
           <div className="border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3">
@@ -645,9 +648,10 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
             </button>
           </div>
         </form>
+        </div>
       </div>
 
-      {/* Scanner Modal */}
+      {/* Scanner Modal - Renderizado fuera del BulkMovementModal para evitar conflictos */}
       {showScanner && (
         <BarcodeScannerModal
           mode="product"
@@ -658,6 +662,6 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           }}
         />
       )}
-    </div>
+    </>
   );
 }

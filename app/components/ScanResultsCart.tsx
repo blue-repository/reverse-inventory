@@ -27,7 +27,10 @@ export default function ScanResultsCart({
           </h3>
           {products.length > 0 && (
             <button
-              onClick={onClearAll}
+              onClick={(e) => {
+                e.stopPropagation();
+                onClearAll();
+              }}
               className="text-xs text-slate-600 hover:text-slate-900 font-medium"
               title="Limpiar carrito"
             >
@@ -51,7 +54,7 @@ export default function ScanResultsCart({
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                d="M2.25 3h1.386c.622 0 1.157.652 1.157 1.462v11.075c0 .81.535 1.462 1.157 1.462h14.412c.622 0 1.157-.652 1.157-1.462V4.462c0-.81.535-1.462 1.157-1.462h1.386m-3 11.155a3 3 0 11-6 0m6 0a3 3 0 1-6 0m6 0H9m4.5-2.25h.008v.008h-.008V9.75Zm0 2.25h.008v.008h-.008v-.008Zm0 2.25h.008v.008h-.008v-.008Z"
+                d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 0 0-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 0 0-16.536-1.84M7.5 14.25 5.106 5.272M6 20.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm12.75 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z"
               />
             </svg>
             <p className="text-xs sm:text-sm text-slate-500">
@@ -118,7 +121,10 @@ export default function ScanResultsCart({
                   </div>
 
                   <button
-                    onClick={() => onRemove(product.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemove(product.id);
+                    }}
                     className="flex-shrink-0 text-slate-400 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
                     title="Remover"
                   >
@@ -137,7 +143,10 @@ export default function ScanResultsCart({
 
                 {!disabled && (
                   <button
-                    onClick={() => onSelect(product)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect(product);
+                    }}
                     className="mt-2 w-full rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
                   >
                     Seleccionar

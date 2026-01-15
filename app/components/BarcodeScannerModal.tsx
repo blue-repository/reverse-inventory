@@ -152,11 +152,13 @@ export default function BarcodeScannerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/70 overflow-y-auto"
+      className="fixed inset-0 z-[60] bg-black/70 overflow-y-auto flex items-center justify-center p-2 sm:p-4"
       onClick={handleClose}
     >
-      <div className="mx-auto w-full max-w-3xl p-2 sm:p-4" onClick={(e) => e.stopPropagation()}>
-        <div className="relative bg-white rounded-xl sm:rounded-2xl shadow-2xl w-full max-h-[calc(100vh-1rem)] sm:max-h-[calc(100vh-2rem)] min-h-[85vh] sm:min-h-[70vh] flex flex-col overflow-hidden">
+      <div 
+        className="relative bg-white rounded-xl sm:rounded-2xl shadow-2xl w-full max-w-3xl max-h-[calc(100vh-1rem)] sm:max-h-[calc(100vh-2rem)] min-h-[85vh] sm:min-h-[70vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
           <div className="sticky top-0 z-10 border-b border-slate-200 px-3 sm:px-4 md:px-6 py-3 sm:py-4 bg-white flex items-start gap-3">
             <div className="flex-1">
               <h2 className="text-base sm:text-lg md:text-xl font-bold text-slate-900 pr-10">
@@ -169,7 +171,10 @@ export default function BarcodeScannerModal({
               </p>
             </div>
             <button
-              onClick={handleClose}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClose();
+              }}
               className="relative -mr-1 -mt-1 rounded-full bg-slate-900 p-2 text-white hover:bg-slate-700 transition-colors"
               aria-label="Cerrar"
             >
@@ -211,7 +216,10 @@ export default function BarcodeScannerModal({
                       </svg>
                       <p className="text-slate-500 text-sm">Escáner no disponible</p>
                       <button
-                        onClick={() => setIsScanning(true)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsScanning(true);
+                        }}
                         className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
                       >
                         Reintentar
@@ -282,14 +290,16 @@ export default function BarcodeScannerModal({
           {/* Botón de Cierre */}
           <div className="border-t border-slate-200 px-3 sm:px-4 md:px-6 py-3 sm:py-4 bg-white">
             <button
-              onClick={handleClose}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClose();
+              }}
               className="w-full rounded-lg border border-slate-300 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               Cerrar
             </button>
           </div>
         </div>
-      </div>
     </div>
   );
 }

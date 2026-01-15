@@ -4,8 +4,67 @@ import { useState } from "react";
 import { Product, UNITS_OF_MEASURE } from "@/app/types/product";
 import { createProduct, updateProduct } from "@/app/actions/products";
 import BarcodeScannerModal from "./BarcodeScannerModal";
+import SearchableSelect from "./SearchableSelect";
 import { useUser } from "@/app/context/UserContext";
 import { supabase } from "@/app/lib/conections/supabase";
+
+// Unidades para Dispositivos Médicos y Reportes
+const DEVICE_UNITS = [
+  "Rollo",
+  "Paquete",
+  "Caja",
+  "Par",
+  "Galón",
+  "Litro",
+  "Mililitro",
+  "Gramo",
+  "Kilogramo",
+  "Metro",
+  "Centímetro",
+  "Unidad",
+  "Docena",
+  "Tubo",
+  "Frasco",
+  "Botella",
+  "Jeringa",
+  "Ampolleta",
+  "Vial",
+  "Sobre",
+];
+
+// Especialidades médicas
+const SPECIALTIES = [
+  "Enfermería",
+  "Cirugía",
+  "Traumatología",
+  "Enfermería/Laboratorio clínico y microbiología",
+  "Anestesiología / Cuidados intensivos",
+  "Ginecología / Obstetricia",
+  "Central de esterilización",
+  "Atención Pre-hospitalaria",
+  "Uso General",
+  "Enfermería/Terapia respiratoria",
+  "Especialidades quirúrgicas",
+];
+
+// Vías de administración
+const ADMINISTRATION_ROUTES = [
+  "Oral",
+  "Sublingual",
+  "Intravenosa",
+  "Intramuscular",
+  "Subcutánea",
+  "Tópica",
+  "Oftálmica",
+  "Ótica",
+  "Nasal",
+  "Inhalatoria",
+  "Rectal",
+  "Vaginal",
+  "Transdérmica",
+  "Epidural",
+  "Intratecal",
+];
 
 type ProductFormProps = {
   product?: Product;
@@ -22,6 +81,11 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
   const [imagePreview, setImagePreview] = useState<string>(product?.image_url || "");
   const [imageLoading, setImageLoading] = useState(true);
   const [imageToDelete, setImageToDelete] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>(product?.category || "");
+  const [selectedSpecialty, setSelectedSpecialty] = useState<string>(product?.specialty || "");
+  const [selectedUnitOfMeasure, setSelectedUnitOfMeasure] = useState<string>(product?.unit_of_measure || "");
+  const [selectedReportingUnit, setSelectedReportingUnit] = useState<string>(product?.reporting_unit || "");
+  const [selectedAdminRoute, setSelectedAdminRoute] = useState<string>(product?.administration_route || "");
 
   const readFileAsDataURL = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -221,38 +285,75 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
             />
           </div>
 
-          {/* Unidad de medida */}
+          {/* Categoría */}
           <div className="sm:col-span-1">
             <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-              Unidad de Medida
+              Categoría <span className="text-red-500">*</span>
             </label>
             <select
-              name="unit_of_measure"
-              defaultValue={product?.unit_of_measure || ""}
+              name="category"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              required
               className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
             >
               <option value="">Seleccionar...</option>
-              {UNITS_OF_MEASURE.map((unit) => (
-                <option key={unit} value={unit}>
-                  {unit}
-                </option>
-              ))}
+              <option value="Medicamentos">Medicamentos</option>
+              <option value="Dispositivos Médicos">Dispositivos Médicos</option>
             </select>
           </div>
 
-          {/* Vía de administración */}
+          {/* Especialidad (solo para Dispositivos Médicos) */}
+          {selectedCategory === "Dispositivos Médicos" && (
+            <div className="sm:col-span-1">
+              <SearchableSelect
+                name="specialty"
+                value={selectedSpecialty}
+                onChange={setSelectedSpecialty}
+                options={SPECIALTIES}
+                placeholder="Seleccionar especialidad..."
+                label="Especialidad"
+              />
+            </div>
+          )}
+
+          {/* Unidad de medida */}
           <div className="sm:col-span-1">
-            <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-              Vía de Administración
-            </label>
-            <input
-              type="text"
-              name="administration_route"
-              defaultValue={product?.administration_route || ""}
-              placeholder="Ej: Oral, Tópica, IV"
-              className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            <SearchableSelect
+              name="unit_of_measure"
+              value={selectedUnitOfMeasure}
+              onChange={setSelectedUnitOfMeasure}
+              options={selectedCategory === "Dispositivos Médicos" ? DEVICE_UNITS : UNITS_OF_MEASURE}
+              placeholder="Seleccionar unidad..."
+              label="Unidad de Medida"
             />
           </div>
+
+          {/* Unidad de Reporte */}
+          <div className="sm:col-span-1">
+            <SearchableSelect
+              name="reporting_unit"
+              value={selectedReportingUnit}
+              onChange={setSelectedReportingUnit}
+              options={selectedCategory === "Dispositivos Médicos" ? DEVICE_UNITS : DEVICE_UNITS}
+              placeholder="Seleccionar unidad..."
+              label="Unidad de Reporte"
+            />
+          </div>
+
+          {/* Vía de administración (solo para Medicamentos) */}
+          {selectedCategory === "Medicamentos" && (
+            <div className="sm:col-span-1">
+              <SearchableSelect
+                name="administration_route"
+                value={selectedAdminRoute}
+                onChange={setSelectedAdminRoute}
+                options={ADMINISTRATION_ROUTES}
+                placeholder="Seleccionar vía..."
+                label="Vía de Administración"
+              />
+            </div>
+          )}
 
           {/* Descripción */}
           <div className="md:col-span-2">
@@ -455,6 +556,9 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
           </button>
         </div>
       </form>
+      </div>
+      
+      {/* Scanner Modal - Renderizado a nivel superior */}
       {showScanner && (
         <BarcodeScannerModal
           mode="code"
@@ -465,7 +569,6 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
           }}
         />
       )}
-    </div>
     </div>
   );
 }
