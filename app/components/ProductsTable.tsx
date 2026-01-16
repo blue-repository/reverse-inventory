@@ -1,5 +1,5 @@
 import { Product } from "@/app/types/product";
-import ProductsTableClient from "@/app/components/ProductsTableClient";
+import ClientTableWrapper from "@/app/components/ClientTableWrapper";
 
 type ProductsTableProps = {
   products: Product[];
@@ -17,7 +17,7 @@ export default function ProductsTable({
   currentPage,
 }: ProductsTableProps) {
   return (
-    <ProductsTableClient
+    <ClientTableWrapper
       products={products}
       initialQuery={initialQuery}
       initialPageSize={initialPageSize}
