@@ -31,16 +31,16 @@ export default function ThemeConfig() {
   };
 
   return (
-    <div className="border-t border-slate-200 px-4 py-3">
+    <div className="border-t border-slate-200 px-4 py-3 space-y-3">
       {/* Section Selector */}
-      <div className="mb-4">
-        <label className="block text-xs text-slate-600 mb-2 font-medium">
-          Sección a personalizar
+      <div>
+        <label className="block text-xs text-slate-600 mb-1.5 font-medium">
+          Sección
         </label>
         <select
           value={selectedSection}
           onChange={(e) => setSelectedSection(e.target.value as Section)}
-          className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         >
           <option value="bgMain">{sectionLabels.bgMain}</option>
           <option value="bgTable">{sectionLabels.bgTable}</option>
@@ -49,19 +49,19 @@ export default function ThemeConfig() {
       </div>
 
       {/* Presets */}
-      <div className="mb-4">
-        <label className="block text-xs text-slate-600 mb-2 font-medium">
-          Temas predefinidos
+      <div>
+        <label className="block text-xs text-slate-600 mb-1.5 font-medium">
+          Temas
         </label>
         <button
           onClick={() => setShowPresets(!showPresets)}
-          className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded-md hover:bg-slate-50 transition-colors text-left text-slate-700 font-medium"
+          className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded-md hover:bg-slate-50 transition-colors text-left text-slate-700 font-medium"
         >
           {showPresets ? "Ocultar" : "Ver"} presets
         </button>
 
         {showPresets && (
-          <div className="mt-2 space-y-1.5">
+          <div className="mt-1.5 space-y-1 max-h-48 overflow-y-auto">
             {THEME_PRESETS.map((preset) => (
               <button
                 key={preset.name}
@@ -69,12 +69,12 @@ export default function ThemeConfig() {
                   applyPreset(preset);
                   setShowPresets(false);
                 }}
-                className="w-full px-3 py-2 text-xs text-left rounded-md border border-slate-200 hover:bg-slate-50 transition-colors font-medium text-slate-700"
+                className="w-full px-2 py-1.5 text-xs text-left rounded-md border border-slate-200 hover:bg-slate-50 transition-colors font-medium text-slate-700"
               >
                 <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
+                  <div className="flex gap-0.5">
                     <div
-                      className="h-4 w-4 rounded border border-slate-300"
+                      className="h-3 w-3 rounded border border-slate-300"
                       style={{
                         backgroundColor: rgbToString(
                           preset.colors.bgMain.r,
@@ -84,7 +84,7 @@ export default function ThemeConfig() {
                       }}
                     />
                     <div
-                      className="h-4 w-4 rounded border border-slate-300"
+                      className="h-3 w-3 rounded border border-slate-300"
                       style={{
                         backgroundColor: rgbToString(
                           preset.colors.bgTable.r,
@@ -94,7 +94,7 @@ export default function ThemeConfig() {
                       }}
                     />
                     <div
-                      className="h-4 w-4 rounded border border-slate-300"
+                      className="h-3 w-3 rounded border border-slate-300"
                       style={{
                         backgroundColor: rgbToString(
                           preset.colors.bgNavbar.r,
@@ -104,7 +104,7 @@ export default function ThemeConfig() {
                       }}
                     />
                   </div>
-                  <span>{preset.name}</span>
+                  <span className="truncate">{preset.name}</span>
                 </div>
               </button>
             ))}
@@ -112,16 +112,16 @@ export default function ThemeConfig() {
         )}
       </div>
 
-      {/* RGB Sliders */}
-      <div className="mb-4">
-        <label className="block text-xs text-slate-600 mb-3 font-medium">
-          Personalizar {sectionLabels[selectedSection].toLowerCase()}
+      {/* RGB Sliders - Compact */}
+      <div>
+        <label className="block text-xs text-slate-600 mb-2 font-medium">
+          RGB
         </label>
 
         {/* Red */}
-        <div className="mb-3">
-          <div className="flex justify-between mb-1">
-            <label className="text-xs text-slate-600">Rojo</label>
+        <div className="mb-2">
+          <div className="flex justify-between mb-0.5">
+            <label className="text-xs text-slate-600">R</label>
             <span className="text-xs font-mono text-slate-700">{currentColor.r}</span>
           </div>
           <input
@@ -130,14 +130,14 @@ export default function ThemeConfig() {
             max="255"
             value={currentColor.r}
             onChange={handleRChange}
-            className="w-full h-2 bg-red-200 rounded-lg appearance-none cursor-pointer accent-red-500"
+            className="w-full h-1.5 bg-red-200 rounded-lg appearance-none cursor-pointer accent-red-500"
           />
         </div>
 
         {/* Green */}
-        <div className="mb-3">
-          <div className="flex justify-between mb-1">
-            <label className="text-xs text-slate-600">Verde</label>
+        <div className="mb-2">
+          <div className="flex justify-between mb-0.5">
+            <label className="text-xs text-slate-600">G</label>
             <span className="text-xs font-mono text-slate-700">{currentColor.g}</span>
           </div>
           <input
@@ -146,14 +146,14 @@ export default function ThemeConfig() {
             max="255"
             value={currentColor.g}
             onChange={handleGChange}
-            className="w-full h-2 bg-green-200 rounded-lg appearance-none cursor-pointer accent-green-500"
+            className="w-full h-1.5 bg-green-200 rounded-lg appearance-none cursor-pointer accent-green-500"
           />
         </div>
 
         {/* Blue */}
-        <div className="mb-3">
-          <div className="flex justify-between mb-1">
-            <label className="text-xs text-slate-600">Azul</label>
+        <div className="mb-2">
+          <div className="flex justify-between mb-0.5">
+            <label className="text-xs text-slate-600">B</label>
             <span className="text-xs font-mono text-slate-700">{currentColor.b}</span>
           </div>
           <input
@@ -162,20 +162,20 @@ export default function ThemeConfig() {
             max="255"
             value={currentColor.b}
             onChange={handleBChange}
-            className="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            className="w-full h-1.5 bg-blue-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
           />
         </div>
 
         {/* Color Preview */}
-        <div className="mt-3 p-2 rounded-md border border-slate-300 flex items-center gap-2">
+        <div className="mt-2 p-1.5 rounded-md border border-slate-300 flex items-center gap-2">
           <div
-            className="h-8 w-8 rounded border border-slate-300"
+            className="h-5 w-5 rounded border border-slate-300 flex-shrink-0"
             style={{
               backgroundColor: rgbToString(currentColor.r, currentColor.g, currentColor.b),
             }}
           />
-          <span className="text-xs font-mono text-slate-600">
-            rgb({currentColor.r}, {currentColor.g}, {currentColor.b})
+          <span className="text-xs font-mono text-slate-600 truncate">
+            {currentColor.r},{currentColor.g},{currentColor.b}
           </span>
         </div>
       </div>
@@ -183,9 +183,9 @@ export default function ThemeConfig() {
       {/* Reset Button */}
       <button
         onClick={resetToDefault}
-        className="w-full px-3 py-2 text-xs rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors font-medium"
+        className="w-full px-2 py-1.5 text-xs rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors font-medium"
       >
-        Restaurar colores predeterminados
+        Restaurar
       </button>
     </div>
   );

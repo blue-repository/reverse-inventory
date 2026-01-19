@@ -29,6 +29,14 @@ export const THEME_PRESETS: ThemePreset[] = [
     },
   },
   {
+    name: "Modo Oscuro Profesional",
+    colors: {
+      bgMain: { r: 17, g: 24, b: 39 },
+      bgTable: { r: 30, g: 41, b: 59 },
+      bgNavbar: { r: 15, g: 23, b: 42 },
+    },
+  },
+  {
     name: "Suave Azul",
     colors: {
       bgMain: { r: 240, g: 248, b: 255 },
