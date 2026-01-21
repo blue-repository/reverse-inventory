@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Product, MovementType } from "@/app/types/product";
-import { recordBulkInventoryMovements } from "@/app/actions/products";
+import { recordBulkInventoryMovements, searchProducts } from "@/app/actions/products";
 import { useUser } from "@/app/context/UserContext";
 import { containsNormalized } from "@/app/lib/search-utils";
 import BarcodeScannerModal from "@/app/components/BarcodeScannerModal";
@@ -39,6 +39,8 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   const [movementType, setMovementType] = useState<MovementType>("salida");
   const [items, setItems] = useState<BulkMovementItem[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchResults, setSearchResults] = useState<Product[]>(products);
+  const [isSearching, setIsSearching] = useState(false);
   const [generalReason, setGeneralReason] = useState<string>("");
   const [generalNotes, setGeneralNotes] = useState<string>("");
   const [showScanner, setShowScanner] = useState(false);
@@ -47,14 +49,47 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Filtrar productos basados en búsqueda
-  const filteredProducts = products.filter(
+  const filteredProducts = searchResults.filter(
     (p) =>
       !items.find((item) => item.product.id === p.id) &&
       (containsNormalized(p.name, searchQuery) ||
         (p.barcode && containsNormalized(p.barcode, searchQuery)))
   );
+
+  // Búsqueda remota cuando se escribe en el buscador
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    const term = searchQuery.trim();
+
+    // Con pocos caracteres, mostrar los productos ya cargados (paginados)
+    if (term.length < 2) {
+      setSearchResults(products);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const { data } = await searchProducts(term, 1, 50);
+        setSearchResults(data || []);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 250);
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery, products]);
 
   // Agregar producto al escanear
   const handleProductScanned = (product: Product) => {
