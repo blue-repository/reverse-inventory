@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Product, MovementType } from "@/app/types/product";
 import { recordBulkInventoryMovements } from "@/app/actions/products";
 import { useUser } from "@/app/context/UserContext";
+import { containsNormalized } from "@/app/lib/search-utils";
 import BarcodeScannerModal from "@/app/components/BarcodeScannerModal";
 
 type BulkMovementItem = {
@@ -29,7 +30,7 @@ type BulkMovementModalProps = {
 
 const MOVEMENT_REASONS: Record<MovementType, string[]> = {
   entrada: ["Compra", "Devolución de cliente", "Reposición", "Otro"],
-  salida: ["Venta", "Devolución a proveedor", "Pérdida", "Rotura", "Expiración", "Otro"],
+  salida: ["Entrega de receta", "Venta", "Devolución a proveedor", "Pérdida", "Rotura", "Expiración", "Otro"],
   ajuste: ["Corrección de inventario", "Ajuste administrativo", "Otro"],
 };
 
@@ -51,8 +52,8 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   const filteredProducts = products.filter(
     (p) =>
       !items.find((item) => item.product.id === p.id) &&
-      (p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.barcode?.toLowerCase().includes(searchQuery.toLowerCase()))
+      (containsNormalized(p.name, searchQuery) ||
+        (p.barcode && containsNormalized(p.barcode, searchQuery)))
   );
 
   // Agregar producto al escanear

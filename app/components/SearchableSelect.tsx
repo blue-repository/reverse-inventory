@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { containsNormalized } from "@/app/lib/search-utils";
 
 type SearchableSelectProps = {
   name: string;
@@ -29,7 +30,7 @@ export default function SearchableSelect({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const filteredOptions = options.filter((option) =>
-    option.toLowerCase().includes(search.toLowerCase())
+    containsNormalized(option, search)
   );
 
   useEffect(() => {

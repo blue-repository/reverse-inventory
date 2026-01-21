@@ -13,7 +13,7 @@ type InventoryMovementModalProps = {
 
 const MOVEMENT_REASONS: Record<MovementType, string[]> = {
   entrada: ["Compra", "Devolución de cliente", "Reposición", "Otro"],
-  salida: ["Venta", "Devolución a proveedor", "Pérdida", "Rotura", "Expiración", "Otro"],
+  salida: ["Entrega de receta", "Venta", "Devolución a proveedor", "Pérdida", "Rotura", "Expiración", "Otro"],
   ajuste: ["Corrección de inventario", "Ajuste administrativo", "Otro"],
 };
 

@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { supabase } from "@/app/lib/conections/supabase";
 import { Product } from "@/app/types/product";
 import ProductsTable from "@/app/components/ProductsTable";
-import RefreshButton from "@/app/components/RefreshButton";
+import { ThemeWrapper } from "@/app/components/ThemeWrapper";
 import { searchProducts } from "@/app/actions/products";
 
 async function ProductsContent({
@@ -46,22 +46,31 @@ export default async function Home({
   searchParams: Promise<{ q?: string; page?: string; pageSize?: string }>;
 }) {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto max-w-7xl px-3 sm:px-4 md:px-6 py-4 sm:py-6 md:py-10">
-        <div className="mb-4 sm:mb-6 flex items-center justify-between">
-          <div>
-            <p className="text-xs sm:text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Inventario
-            </p>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Productos - Farmacia</h1>
+    <ThemeWrapper>
+      <div className="min-h-screen text-slate-900 transition-colors duration-300">
+        <div className="mx-auto px-2 sm:px-4 lg:px-6 max-w-full py-3 sm:py-5">
+          <div className="mb-3 sm:mb-4">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="h-1 w-1 rounded-full bg-blue-600"></div>
+              <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Gestión de Productos
+              </p>
+            </div>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900">Inventario de Productos</h2>
           </div>
-          <RefreshButton />
-        </div>
 
-        <Suspense fallback={<div className="py-6 text-center text-slate-600">Cargando...</div>}>
-          <ProductsContent searchParams={searchParams} />
-        </Suspense>
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-8 sm:py-12">
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600"></div>
+                <p className="text-xs text-slate-500">Cargando productos...</p>
+              </div>
+            </div>
+          }>
+            <ProductsContent searchParams={searchParams} />
+          </Suspense>
+        </div>
       </div>
-    </div>
+    </ThemeWrapper>
   );
 }

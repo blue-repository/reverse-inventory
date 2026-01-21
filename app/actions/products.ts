@@ -3,6 +3,7 @@
 import { supabase } from "@/app/lib/conections/supabase";
 import { revalidatePath } from "next/cache";
 import { InventoryMovement, MovementType, ProductBatch } from "@/app/types/product";
+import { normalizeSearchText } from "@/app/lib/search-utils";
 
 export async function searchProducts(
   query: string,
@@ -12,27 +13,49 @@ export async function searchProducts(
   const pageStart = (page - 1) * pageSize;
   const pageEnd = page * pageSize - 1;
 
-  if (!query.trim()) {
-    const { data, error, count } = await supabase
+  try {
+    // Obtener todos los productos no eliminados (sin paginación inicial)
+    const { data: allProducts, error } = await supabase
       .from("products")
-      .select("*", { count: "exact" })
+      .select("*")
       .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .range(pageStart, pageEnd);
+      .order("created_at", { ascending: false });
 
-    return { data: data || [], error, count: count || 0 };
+    if (error || !allProducts) {
+      return { data: [], error: error?.message || "Error al buscar productos", count: 0 };
+    }
+
+    // Si hay query, filtrar con normalización
+    if (query.trim()) {
+      const normalizedQuery = normalizeSearchText(query);
+
+      const filtered = allProducts.filter((product) => {
+        const normalizedName = normalizeSearchText(product.name || "");
+        const normalizedDescription = normalizeSearchText(product.description || "");
+        const normalizedBarcode = normalizeSearchText(product.barcode || "");
+
+        return (
+          normalizedName.includes(normalizedQuery) ||
+          normalizedDescription.includes(normalizedQuery) ||
+          normalizedBarcode.includes(normalizedQuery)
+        );
+      });
+
+      // Aplicar paginación al resultado filtrado
+      const paginatedData = filtered.slice(pageStart, pageEnd + 1);
+      return { data: paginatedData, error: null, count: filtered.length };
+    }
+
+    // Sin query, devolver todos los productos paginados
+    const paginatedData = allProducts.slice(pageStart, pageEnd + 1);
+    return { data: paginatedData, error: null, count: allProducts.length };
+  } catch (err: any) {
+    return {
+      data: [],
+      error: err.message || "Error desconocido en búsqueda",
+      count: 0,
+    };
   }
-
-  // Construir búsqueda en múltiples campos (sin id porque es UUID)
-  const { data, error, count } = await supabase
-    .from("products")
-    .select("*", { count: "exact" })
-    .is("deleted_at", null)
-    .or(`name.ilike.%${query}%,barcode.ilike.%${query}%,description.ilike.%${query}%`)
-    .order("created_at", { ascending: false })
-    .range(pageStart, pageEnd);
-
-  return { data: data || [], error, count: count || 0 };
 }
 
 export async function searchProductByBarcode(barcode: string) {
@@ -40,18 +63,29 @@ export async function searchProductByBarcode(barcode: string) {
     return { data: null, error: "Código de barras vacío" };
   }
 
+  const normalizedBarcode = normalizeSearchText(barcode);
+
   const { data, error } = await supabase
     .from("products")
     .select("*")
-    .eq("barcode", barcode.trim())
-    .is("deleted_at", null)
-    .single();
+    .is("deleted_at", null);
 
-  if (error) {
+  if (error || !data) {
     return { data: null, error: "Producto no encontrado" };
   }
 
-  return { data, error: null };
+  // Buscar coincidencia exacta (normalizada) o aproximada
+  const match = data.find(
+    (product) =>
+      normalizeSearchText(product.barcode || "") === normalizedBarcode ||
+      normalizeSearchText(product.barcode || "") === barcode.trim()
+  );
+
+  if (!match) {
+    return { data: null, error: "Producto no encontrado" };
+  }
+
+  return { data: match, error: null };
 }
 
 export async function createProduct(formData: FormData, createdBy?: string) {

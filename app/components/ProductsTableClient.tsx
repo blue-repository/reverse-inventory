@@ -4,11 +4,13 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Product } from "@/app/types/product";
 import { deleteProduct } from "@/app/actions/products";
+import { useTheme, rgbToString } from "@/app/context/ThemeContext";
 import ProductForm from "@/app/components/ProductForm";
 import ProductDetailsModal from "@/app/components/ProductDetailsModal";
 import BulkMovementModal from "@/app/components/BulkMovementModal";
 import BarcodeScannerModal from "@/app/components/BarcodeScannerModal";
 import DeleteConfirmModal from "@/app/components/DeleteConfirmModal";
+import FilterModal, { FilterOptions } from "@/app/components/FilterModal";
 import Image from "next/image";
 
 type ProductsTableClientProps = {
@@ -19,6 +21,8 @@ type ProductsTableClientProps = {
   currentPage: number;
 };
 
+export type { ProductsTableClientProps };
+
 export default function ProductsTableClient({
   products,
   initialQuery,
@@ -28,9 +32,11 @@ export default function ProductsTableClient({
 }: ProductsTableClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { colors } = useTheme();
   const [showForm, setShowForm] = useState(false);
   const [showBulkMovement, setShowBulkMovement] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | undefined>();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -38,6 +44,7 @@ export default function ProductsTableClient({
   const [showReportMenu, setShowReportMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [pageSize, setPageSize] = useState(initialPageSize);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reportMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -195,43 +202,143 @@ export default function ProductsTableClient({
     }
   };
 
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      // Usar la URL actual con sus parámetros
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) {
+        params.set("q", searchQuery.trim());
+      }
+      params.set("page", currentPage.toString());
+      params.set("pageSize", pageSize.toString());
+
+      router.push(`/?${params.toString()}`, { scroll: false });
+      
+      // Dar tiempo para que se actualice
+      setTimeout(() => setIsRefreshing(false), 500);
+    } catch (error) {
+      console.error("Error al refrescar:", error);
+      setIsRefreshing(false);
+    }
+  }, [router, searchQuery, currentPage, pageSize]);
+
+  const handleApplyFilters = useCallback(
+    (filters: FilterOptions) => {
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) {
+        params.set("q", searchQuery.trim());
+      }
+      
+      // Agregar filtros a los parámetros
+      if (filters.category) params.set("category", filters.category);
+      if (filters.specialty) params.set("specialty", filters.specialty);
+      if (filters.stockMin !== undefined) params.set("stockMin", filters.stockMin.toString());
+      if (filters.stockMax !== undefined) params.set("stockMax", filters.stockMax.toString());
+      if (filters.expirationDateFrom) params.set("expirationFrom", filters.expirationDateFrom);
+      if (filters.expirationDateTo) params.set("expirationTo", filters.expirationDateTo);
+      if (filters.hasImage) params.set("hasImage", "true");
+      if (filters.hasBarcode) params.set("hasBarcode", "true");
+      
+      params.set("page", "1");
+      params.set("pageSize", pageSize.toString());
+
+      router.push(`/?${params.toString()}`, { scroll: false });
+    },
+    [router, searchQuery, pageSize]
+  );
+
+  // Extraer opciones únicas de categorías y especialidades
+  const categories = Array.from(new Set(products.map((p) => p.category).filter(Boolean))) as string[];
+  const specialties = Array.from(new Set(products.map((p) => p.specialty).filter(Boolean))) as string[];
+
   const totalPages = Math.ceil(totalCount / pageSize);
 
   return (
     <>
-      <div className="mb-4 sm:mb-6 flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex-1 w-full">
+      <div className="mb-4 sm:mb-5 flex flex-col sm:flex-row gap-2 sm:gap-3 sm:items-center sm:justify-between p-2 sm:p-3">
+        {/* Search Bar - Left */}
+        <div className="flex-1 w-full sm:max-w-md">
           <div className="relative">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+              className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
             <input
               type="text"
-              placeholder="Buscar..."
+              placeholder="Buscar productos..."
               value={searchQuery}
               onChange={handleSearch}
-              className="w-full rounded-lg border border-slate-300 pr-12 sm:pr-14 px-3 sm:px-4 py-2 sm:py-2.5 text-sm placeholder-slate-500 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-1"
+              className="w-full rounded-md border border-slate-300 pl-10 pr-11 py-2.5 sm:py-2 text-sm placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
             />
             <button
               type="button"
               onClick={() => setShowScanner(true)}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md bg-slate-900 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-slate-800"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded bg-blue-600 px-2 py-1.5 sm:py-1 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
               aria-label="Escanear para buscar"
             >
               📸
             </button>
           </div>
         </div>
-        <div className="flex gap-2 sm:gap-3 flex-wrap">
+
+        {/* Action Buttons - Right */}
+        <div className="flex gap-2 flex-wrap sm:flex-nowrap sm:justify-end">
+          {/* Refresh Button */}
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="flex items-center justify-center gap-1.5 rounded-md bg-slate-500 px-2.5 sm:px-3 py-2.5 sm:py-2 text-xs font-medium text-white hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-h-[40px] sm:min-h-auto"
+            title="Actualizar tabla"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+              className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+
+          {/* Filter Button */}
+          <button
+            onClick={() => setShowFilterModal(true)}
+            className="flex items-center justify-center gap-1.5 rounded-md bg-slate-600 px-2.5 sm:px-3 py-2.5 sm:py-2 text-xs font-medium text-white hover:bg-slate-700 transition-colors min-h-[40px] sm:min-h-auto"
+            title="Aplicar filtros"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+              className="h-4 w-4"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+
           <button
             onClick={() => setShowBulkMovement(true)}
-            className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
+            className="flex items-center justify-center gap-1.5 rounded-md bg-blue-600 px-2 sm:px-3 py-2.5 sm:py-2 text-xs font-medium text-white hover:bg-blue-700 transition-colors min-h-[40px] sm:min-h-auto"
             title="Registrar movimiento masivo de inventario"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
-              strokeWidth={2.5}
+              strokeWidth={2}
               stroke="currentColor"
-              className="h-5 w-5"
+              className="h-4 w-4 flex-shrink-0"
             >
               <path
                 strokeLinecap="round"
@@ -239,24 +346,24 @@ export default function ProductsTableClient({
                 d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"
               />
             </svg>
-            Movimiento
+            <span className="hidden xs:inline">Movimiento</span>
           </button>
           <button
             onClick={handleCreate}
-            className="flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 transition-colors shadow-md hover:shadow-lg"
+            className="flex items-center justify-center gap-1.5 rounded-md bg-slate-900 px-2 sm:px-3 py-2.5 sm:py-2 text-xs font-medium text-white hover:bg-slate-800 transition-colors min-h-[40px] sm:min-h-auto"
             title="Crear nuevo producto"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
-              strokeWidth={2.5}
+              strokeWidth={2}
               stroke="currentColor"
-              className="h-5 w-5"
+              className="h-4 w-4 flex-shrink-0"
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            Nuevo
+            <span className="hidden xs:inline">Nuevo Producto</span>
           </button>
           <div className="relative" ref={reportMenuRef}>
             <button
@@ -264,33 +371,33 @@ export default function ProductsTableClient({
                 e.stopPropagation();
                 setShowReportMenu(!showReportMenu);
               }}
-              className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors shadow-md hover:shadow-lg"
+              className="flex items-center justify-center gap-1.5 rounded-md bg-slate-700 px-2 sm:px-3 py-2.5 sm:py-2 text-xs font-medium text-white hover:bg-slate-800 transition-colors min-h-[40px] sm:min-h-auto"
               title="Descargar reportes"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
-                strokeWidth={2.5}
+                strokeWidth={2}
                 stroke="currentColor"
-                className="h-5 w-5"
+                className="h-4 w-4 flex-shrink-0"
               >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                  d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
                 />
               </svg>
-              Reportes
+              <span className="hidden xs:inline">Reportes</span>
             </button>
 
             {/* Dropdown Menu */}
             {showReportMenu && (
-              <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg border border-slate-200 shadow-lg z-10 overflow-hidden">
-                <div className="p-2">
+              <div className="absolute right-0 mt-1 w-48 sm:w-52 bg-white rounded-md border border-slate-200 shadow-xl z-10 overflow-hidden">
+                <div className="p-1">
                   <button
                     onClick={() => downloadReport("productos")}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-100 transition-colors text-left text-sm text-slate-700 hover:text-slate-900"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-blue-50 transition-colors text-left text-xs text-slate-700 hover:text-blue-700"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -298,27 +405,25 @@ export default function ProductsTableClient({
                       viewBox="0 0 24 24"
                       strokeWidth={1.5}
                       stroke="currentColor"
-                      className="h-5 w-5 text-green-600"
+                      className="h-4 w-4 text-blue-600 flex-shrink-0"
                     >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 12.75h.008v.008H9.75V12.75zm0 2.25h.008v.008H9.75v-.008zm0 2.25h.008v.008H9.75v-.008zm0 2.25h.008v.008H9.75v-.008zM12 12.75h.008v.008H12V12.75zm0 2.25h.008v.008H12v-.008zm0 2.25h.008v.008H12v-.008zm0 2.25h.008v.008H12v-.008zm7.5-7.5h.008v.008H19.5v-.008zm0 2.25h.008v.008H19.5v-.008zm0 2.25h.008v.008H19.5v-.008zm0 2.25h.008v.008H19.5v-.008z"
+                        d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"
                       />
                     </svg>
                     <div>
                       <p className="font-medium">Productos</p>
-                      <p className="text-xs text-slate-500">Stock actual de cada producto</p>
+                      <p className="text-[10px] text-slate-500">Stock actual</p>
                     </div>
                   </button>
 
-                  {/* Separador para próximos reportes */}
-                  <div className="border-t border-slate-200 my-2"></div>
+                  <div className="border-t border-slate-100 my-1"></div>
 
-                  {/* Reporte de Lotes por Vencer */}
                   <button
                     onClick={() => downloadReport("lotes-por-vencer")}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-100 transition-colors text-left text-sm text-slate-700 hover:text-slate-900"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-amber-50 transition-colors text-left text-xs text-slate-700 hover:text-amber-700"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -326,46 +431,19 @@ export default function ProductsTableClient({
                       viewBox="0 0 24 24"
                       strokeWidth={1.5}
                       stroke="currentColor"
-                      className="h-5 w-5 text-yellow-600"
+                      className="h-4 w-4 text-amber-600 flex-shrink-0"
                     >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                        d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
                       />
                     </svg>
                     <div>
                       <p className="font-medium">Lotes por Vencer</p>
-                      <p className="text-xs text-slate-500">Próximos 30 días</p>
+                      <p className="text-[10px] text-slate-500">Próximos 30 días</p>
                     </div>
                   </button>
-
-                  {/* Separador para próximos reportes */}
-                  <div className="border-t border-slate-200 my-2"></div>
-
-                  {/* Próximos reportes (deshabilitados) */}
-                  <div className="px-3 py-2 opacity-50 pointer-events-none">
-                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm text-slate-500">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={1.5}
-                        stroke="currentColor"
-                        className="h-5 w-5 text-slate-400"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a60.59 60.59 0 015.56 0m-.84 1.409a60.59 60.59 0 00-5.56 0m.12 0a60 60 0 015.32 8.362m-5.32-8.362a8.967 8.967 0 018.963 8.963"
-                        />
-                      </svg>
-                      <div>
-                        <p className="font-medium">Próximamente...</p>
-                        <p className="text-xs">Más reportes disponibles</p>
-                      </div>
-                    </button>
-                  </div>
                 </div>
               </div>
             )}
@@ -373,77 +451,103 @@ export default function ProductsTableClient({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-        <div className="overflow-x-auto -mx-px">
-          <table className="w-full text-left text-xs sm:text-sm min-w-[740px]">
-            <thead className="bg-slate-900 text-slate-50">
+      <div 
+        style={{ backgroundColor: rgbToString(colors.bgTable.r, colors.bgTable.g, colors.bgTable.b) }}
+        className="overflow-hidden rounded-lg border border-slate-200 shadow-sm transition-colors duration-300 mx-2"
+      >
+        <div className="overflow-x-auto -mx-2 px-2">
+          <table className="w-full text-left text-xs sm:text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
               <tr>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold">Nombre</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden md:table-cell">Código</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold">Stock</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden md:table-cell">Categoría</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden lg:table-cell">Especialidad</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden lg:table-cell">Unidad</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden xl:table-cell">Unidad Reporte</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold hidden lg:table-cell">Expiración</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 font-semibold w-1 whitespace-nowrap">Acciones</th>
+                <th className="px-2 sm:px-4 py-2.5 sm:py-3 font-semibold text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-700 whitespace-nowrap">Nombre</th>
+                <th className="px-2 sm:px-4 py-2.5 sm:py-3 font-semibold text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-700 hidden md:table-cell whitespace-nowrap">Código</th>
+                <th className="px-2 sm:px-4 py-2.5 sm:py-3 font-semibold text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-700 text-center whitespace-nowrap">Stock</th>
+                <th className="px-2 sm:px-4 py-2.5 sm:py-3 font-semibold text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-700 hidden md:table-cell whitespace-nowrap">Categoría</th>
+                <th className="px-2 sm:px-4 py-2.5 sm:py-3 font-semibold text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-700 hidden lg:table-cell whitespace-nowrap">Especialidad</th>
+                <th className="px-2 sm:px-4 py-2.5 sm:py-3 font-semibold text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-700 hidden lg:table-cell whitespace-nowrap">Unidad</th>
+                <th className="px-2 sm:px-4 py-2.5 sm:py-3 font-semibold text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-700 hidden xl:table-cell whitespace-nowrap">Unidad Reporte</th>
+                <th className="px-2 sm:px-4 py-2.5 sm:py-3 font-semibold text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-700 hidden lg:table-cell whitespace-nowrap">Expiración</th>
+                <th className="px-2 sm:px-4 py-2.5 sm:py-3 font-semibold text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-700 text-center whitespace-nowrap">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="divide-y divide-slate-100">
               {products && products.length > 0 ? (
-                products.map((product) => (
-                  <tr key={product.id} className="odd:bg-white even:bg-slate-50 hover:bg-slate-100">
-                    <td className="px-2 sm:px-4 py-2 sm:py-3">
-                      <div className="font-medium text-slate-900">{product.name}</div>
-                      <div className="md:hidden text-xs text-slate-500 mt-0.5 space-y-0.5">
-                        <div>{product.barcode || "Sin código"}</div>
+                products.map((product, index) => {
+                  const primaryBg = rgbToString(colors.bgTable.r, colors.bgTable.g, colors.bgTable.b);
+                  const alternateBg = `rgba(${colors.bgTable.r}, ${colors.bgTable.g}, ${colors.bgTable.b}, 0.7)`;
+                  return (
+                  <tr 
+                    key={product.id} 
+                    style={{ 
+                      backgroundColor: index % 2 === 0 ? primaryBg : alternateBg,
+                      transition: 'background-color 300ms'
+                    }}
+                    className="hover:opacity-80 transition-opacity"
+                  >
+                    <td className="px-2 sm:px-4 py-2.5 sm:py-3">
+                      <div className="font-medium text-slate-900 text-xs sm:text-sm leading-tight max-w-xs overflow-hidden text-ellipsis">{product.name}</div>
+                      <div className="md:hidden text-[9px] sm:text-[10px] text-slate-500 mt-1 space-y-1">
+                        <div className="truncate">{product.barcode || "Sin código"}</div>
                         <div className="flex flex-wrap gap-1">
                           {product.category && (
-                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] sm:text-[10px] text-slate-700 truncate">
                               {product.category}
                             </span>
                           )}
                           {product.specialty && (
-                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-700">
+                            <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] sm:text-[10px] text-amber-700 truncate">
                               {product.specialty}
                             </span>
                           )}
                         </div>
                       </div>
                     </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden md:table-cell">{product.barcode || "—"}</td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 sm:px-3 py-0.5 sm:py-1 text-xs font-semibold ${
-                          product.stock > 0
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
+                    <td className="px-2 sm:px-4 py-2.5 sm:py-3 hidden md:table-cell">
+                      <span className="text-xs sm:text-sm text-slate-600 font-mono truncate block">{product.barcode || "—"}</span>
+                    </td>
+                    <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-center">
+                      <span className={`inline-flex items-center rounded-full px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold whitespace-nowrap ${
+                        product.stock === 0
+                          ? "bg-red-100 text-red-700"
+                          : product.stock < 10
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-green-100 text-green-700"
+                      }`}>
                         {product.stock}
                       </span>
-                      <div className="md:hidden text-xs text-slate-500 mt-0.5">
-                        Init: {product.stock_inicial}
-                      </div>
                     </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden md:table-cell whitespace-nowrap">
-                      {product.category || "—"}
+                    <td className="px-2 sm:px-4 py-2.5 sm:py-3 hidden md:table-cell">
+                      {product.category ? (
+                        <span className="inline-flex items-center rounded px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 max-w-fit truncate">
+                          {product.category}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
+                      )}
                     </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden lg:table-cell whitespace-nowrap">
-                      {product.specialty || "—"}
+                    <td className="px-2 sm:px-4 py-2.5 sm:py-3 hidden lg:table-cell">
+                      {product.specialty ? (
+                        <span className="inline-flex items-center rounded px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200 max-w-fit truncate">
+                          {product.specialty}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
+                      )}
                     </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden lg:table-cell">{product.unit_of_measure || "—"}</td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden xl:table-cell">
-                      {product.reporting_unit || "—"}
+                    <td className="px-2 sm:px-4 py-2.5 sm:py-3 hidden lg:table-cell">
+                      <span className="text-xs sm:text-sm text-slate-600 truncate block">{product.unit_of_measure || "—"}</span>
                     </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 hidden lg:table-cell">
-                      {formatDate(product.expiration_date)}
+                    <td className="px-2 sm:px-4 py-2.5 sm:py-3 hidden xl:table-cell">
+                      <span className="text-xs sm:text-sm text-slate-600 truncate block">{product.reporting_unit || "—"}</span>
                     </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3">
-                      <div className="flex gap-1 sm:gap-2">
+                    <td className="px-2 sm:px-4 py-2.5 sm:py-3 hidden lg:table-cell">
+                      <span className="text-xs sm:text-sm text-slate-600 truncate block">{formatDate(product.expiration_date)}</span>
+                    </td>
+                    <td className="px-1 sm:px-4 py-2.5 sm:py-3">
+                      <div className="flex items-center justify-center gap-0.5 sm:gap-1">
                         <button
                           onClick={() => setSelectedProduct(product)}
-                          className="rounded-lg border border-slate-300 p-1.5 sm:p-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                          className="rounded p-1 sm:p-1.5 text-blue-600 hover:bg-blue-50 transition-colors flex-shrink-0"
                           title="Ver detalles"
                         >
                           <svg
@@ -454,16 +558,13 @@ export default function ProductsTableClient({
                             stroke="currentColor"
                             className="h-3.5 w-3.5 sm:h-4 sm:w-4"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.562.562 0 00-.586 0L6.734 20.84a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602c-.38-.325-.178-.948.32-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"
-                            />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                           </svg>
                         </button>
                         <button
                           onClick={() => handleEdit(product)}
-                          className="rounded-lg border border-slate-300 p-1.5 sm:p-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                          className="rounded p-1 sm:p-1.5 text-slate-600 hover:bg-slate-100 transition-colors flex-shrink-0"
                           title="Editar"
                         >
                           <svg
@@ -474,17 +575,13 @@ export default function ProductsTableClient({
                             stroke="currentColor"
                             className="h-3.5 w-3.5 sm:h-4 sm:w-4"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="m16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 9.75a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"
-                            />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
                           </svg>
                         </button>
                         <button
                           onClick={() => setProductToDelete(product)}
                           disabled={deletingId === product.id}
-                          className="rounded-lg border border-red-300 p-1.5 sm:p-2 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                          className="rounded p-1 sm:p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors flex-shrink-0"
                           title="Eliminar"
                         >
                           <svg
@@ -505,11 +602,24 @@ export default function ProductsTableClient({
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-2 sm:px-4 py-6 text-center text-slate-600">
-                    {searchQuery ? "No se encontraron productos" : "No hay productos disponibles"}
+                  <td colSpan={9} className="px-2 sm:px-4 py-8 sm:py-12 text-center">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-slate-300 mb-2 sm:mb-3"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m6 4.5l2.25 2.25m0 0l2.25-2.25M12 13.5V3m8.25 9.75h-16.5" />
+                    </svg>
+                    <p className="text-xs sm:text-sm text-slate-500">
+                      {searchQuery ? "No se encontraron productos" : "No hay productos disponibles"}
+                    </p>
                   </td>
                 </tr>
               )}
@@ -519,95 +629,82 @@ export default function ProductsTableClient({
       </div>
 
       {/* Pagination and items per page controls */}
-      <div className="mt-4 sm:mt-6 space-y-3 sm:space-y-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2 justify-center sm:justify-start">
-            <label htmlFor="pageSize" className="text-xs sm:text-sm font-medium text-slate-700 whitespace-nowrap">
-              Mostrar:
-            </label>
-            <select
-              id="pageSize"
-              value={pageSize}
-              onChange={handlePageSizeChange}
-              className="flex-1 sm:flex-none rounded-lg border border-slate-300 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-1"
-            >
-              <option value="10">10</option>
-              <option value="20">20</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-            </select>
+      <div className="mt-3 sm:mt-5 flex flex-col gap-3 sm:gap-0 sm:flex-row items-center justify-between text-xs mb-2 mx-2 sm:mx-0 px-0 sm:px-2">
+        <div className="w-full sm:w-auto flex justify-center sm:justify-start">
+          <span className="text-slate-600 text-[11px] sm:text-xs text-center">
+            Mostrando {products.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, totalCount)} de {totalCount}
+          </span>
+        </div>
+
+        <div className="w-full sm:w-auto flex items-center justify-center gap-2 sm:gap-3">
+          <label htmlFor="pageSize" className="text-slate-600 whitespace-nowrap text-[11px] sm:text-xs">
+            Por página:
+          </label>
+          <select
+            id="pageSize"
+            value={pageSize}
+            onChange={handlePageSizeChange}
+            className="rounded border border-slate-300 px-1.5 sm:px-2 py-1.5 sm:py-1 text-[11px] sm:text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+          >
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+
+        <div className="w-full sm:w-auto flex items-center justify-center gap-0.5 sm:gap-1 overflow-x-auto pb-1 sm:pb-0">
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="rounded border border-slate-300 px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap flex-shrink-0"
+          >
+            ← Ant.
+          </button>
+          
+          <div className="flex items-center gap-0.5 sm:gap-1 px-1 sm:px-2 overflow-x-auto">
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage <= 3) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = currentPage - 2 + i;
+              }
+              
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => handlePageChange(pageNum)}
+                  className={`rounded px-1.5 sm:px-2 py-1 min-w-[24px] sm:min-w-[28px] text-[10px] sm:text-xs transition-colors flex-shrink-0 ${
+                    currentPage === pageNum
+                      ? "bg-blue-600 text-white font-medium"
+                      : "text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
           </div>
 
-          <div className="flex items-center justify-center gap-1 sm:gap-2">
-            <button
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage === 1}
-              className="rounded-lg border border-slate-300 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <span className="hidden sm:inline">← Anterior</span>
-              <span className="sm:hidden">←</span>
-            </button>
-
-            <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
-                let pageNum;
-                if (totalPages <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage === 1) {
-                  pageNum = i + 1;
-                } else if (currentPage === totalPages) {
-                  pageNum = totalPages - 2 + i;
-                } else {
-                  pageNum = currentPage - 1 + i;
-                }
-                
-                if (pageNum < 1 || pageNum > totalPages) return null;
-
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => handlePageChange(pageNum)}
-                    className={`rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium transition-colors min-w-[32px] sm:min-w-[40px] ${
-                      currentPage === pageNum
-                        ? "bg-slate-900 text-white"
-                        : "border border-slate-300 text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
-
-            <button
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === totalPages}
-              className="rounded-lg border border-slate-300 px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <span className="hidden sm:inline">Siguiente →</span>
-              <span className="sm:hidden">→</span>
-            </button>
-          </div>
-
-          <div className="text-center text-xs sm:text-sm text-slate-600 sm:text-right">
-            {products.length > 0 ? (
-              <>
-                <span className="hidden sm:inline">
-                  Mostrando {(currentPage - 1) * pageSize + 1} a{" "}
-                  {Math.min(currentPage * pageSize, totalCount)} de {totalCount}
-                </span>
-                <span className="sm:hidden">
-                  {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, totalCount)} de {totalCount}
-                </span>
-              </>
-            ) : (
-              "—"
-            )}
-          </div>
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="rounded border border-slate-300 px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap flex-shrink-0"
+          >
+            Sig. →
+          </button>
         </div>
       </div>
 
-      {showForm && <ProductForm product={editingProduct} onClose={handleCloseForm} />}
+      {showForm && (
+        <ProductForm product={editingProduct} onClose={handleCloseForm} />
+      )}
+
       {showScanner && (
         <BarcodeScannerModal
           mode="code"
@@ -639,6 +736,15 @@ export default function ProductsTableClient({
           onConfirm={() => handleDelete(productToDelete.id)}
           onCancel={() => setProductToDelete(null)}
           isDeleting={deletingId === productToDelete.id}
+        />
+      )}
+      {showFilterModal && (
+        <FilterModal
+          isOpen={showFilterModal}
+          onClose={() => setShowFilterModal(false)}
+          onApplyFilters={handleApplyFilters}
+          categories={categories}
+          specialties={specialties}
         />
       )}
     </>
