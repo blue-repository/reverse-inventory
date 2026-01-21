@@ -353,6 +353,8 @@ export default function QuickInventoryModal({
                 </button>
               );
             })}
+          </div>
+
           {/* Cantidad */}
           <div>
             <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
