@@ -193,3 +193,4 @@ GROUP BY movement_group_id, movement_type, movement_date;
 SELECT indexname FROM pg_indexes WHERE tablename = 'inventory_movements';
 */
 
+
