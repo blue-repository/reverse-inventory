@@ -87,7 +87,7 @@ recordInventoryMovement(
 | Tipo | Icono | Motivos |
 |------|-------|---------|
 | **Entrada** | 📥 | Compra, Devolución de cliente, Reposición |
-| **Salida** | 📤 | Venta, Devolución a proveedor, Pérdida, Rotura, Expiración |
+| **Salida** | 📤 | Entrega de receta, Venta, Devolución a proveedor, Pérdida, Rotura, Expiración |
 | **Ajuste** | ⚙️ | Corrección de inventario, Ajuste administrativo |
 
 **Proceso:**

@@ -14,7 +14,7 @@ type QuickInventoryModalProps = {
 
 const MOVEMENT_REASONS: Record<MovementType, string[]> = {
   entrada: ["Compra", "Devolución de cliente", "Reposición", "Otro"],
-  salida: ["Venta", "Devolución a proveedor", "Pérdida", "Rotura", "Expiración", "Otro"],
+  salida: ["Entrega de receta", "Venta", "Devolución a proveedor", "Pérdida", "Rotura", "Expiración", "Otro"],
   ajuste: ["Corrección de inventario", "Ajuste administrativo", "Otro"],
 };
 
@@ -98,6 +98,12 @@ export default function QuickInventoryModal({
 
     if (!quantity || parseInt(quantity) <= 0) {
       setError("Ingresa una cantidad válida mayor a 0");
+      return;
+    }
+
+    // Validación adicional: no permitir salidas si stock es 0
+    if (movementType === "salida" && selectedProduct.stock === 0) {
+      setError("No se puede registrar salida de un producto sin stock. Selecciona un producto con disponibilidad.");
       return;
     }
 
@@ -229,26 +235,45 @@ export default function QuickInventoryModal({
             {/* Resultados de búsqueda */}
             {showResults && searchResults.length > 0 && !selectedProduct && (
               <div className="absolute z-10 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-slate-300 bg-white shadow-lg">
-                {searchResults.map((product) => (
-                  <button
-                    key={product.id}
-                    type="button"
-                    onClick={() => handleSelectProduct(product)}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-0 transition-colors"
-                  >
-                    <div className="font-medium text-xs sm:text-sm text-slate-900">
-                      {product.name}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                      {product.barcode && <span>Código: {product.barcode}</span>}
-                      <span className={`px-1.5 py-0.5 rounded text-xs ${
-                        product.stock > 0 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                {searchResults.map((product) => {
+                  const isOutOfStock = product.stock === 0;
+                  return (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => handleSelectProduct(product)}
+                      disabled={false}
+                      className={`w-full text-left px-3 py-2 border-b border-slate-100 last:border-0 transition-colors ${
+                        isOutOfStock 
+                          ? "bg-red-50 hover:bg-red-100 opacity-75" 
+                          : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className={`font-medium text-xs sm:text-sm ${
+                        isOutOfStock ? "text-red-900" : "text-slate-900"
                       }`}>
-                        Stock: {product.stock}
-                      </span>
-                    </div>
-                  </button>
-                ))}
+                        {product.name}
+                        {isOutOfStock && (
+                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] sm:text-xs bg-red-600 text-white font-semibold">
+                            SIN STOCK
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                        {product.barcode && <span>Código: {product.barcode}</span>}
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                          isOutOfStock
+                            ? "bg-red-200 text-red-900" 
+                            : product.stock > 0 
+                              ? "bg-emerald-100 text-emerald-800" 
+                              : "bg-amber-100 text-amber-800"
+                        }`}>
+                          Stock: {product.stock}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
@@ -261,46 +286,73 @@ export default function QuickInventoryModal({
 
           {/* Información del Producto Seleccionado */}
           {selectedProduct && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 sm:p-3">
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <p className="text-slate-600">Stock Inicial</p>
-                  <p className="font-semibold text-slate-900">{selectedProduct.stock_inicial} unidades</p>
+            <>
+              <div className={`rounded-lg border p-2.5 sm:p-3 ${
+                selectedProduct.stock === 0
+                  ? "border-red-300 bg-red-50"
+                  : "border-slate-200 bg-slate-50"
+              }`}>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <p className={`${selectedProduct.stock === 0 ? "text-red-600" : "text-slate-600"}`}>
+                      Stock Inicial
+                    </p>
+                    <p className={`font-semibold ${selectedProduct.stock === 0 ? "text-red-900" : "text-slate-900"}`}>
+                      {selectedProduct.stock_inicial} unidades
+                    </p>
+                  </div>
+                  <div>
+                    <p className={`${selectedProduct.stock === 0 ? "text-red-600" : "text-slate-600"}`}>
+                      Stock Actual
+                    </p>
+                    <p className={`font-semibold ${selectedProduct.stock === 0 ? "text-red-900" : "text-slate-900"}`}>
+                      {selectedProduct.stock} unidades
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-slate-600">Stock Actual</p>
-                  <p className="font-semibold text-slate-900">{selectedProduct.stock} unidades</p>
-                </div>
+                {selectedProduct.stock === 0 && (
+                  <div className="mt-2 pt-2 border-t border-red-300 text-xs text-red-700 font-medium">
+                    ⚠️ Este producto no tiene stock disponible. Solo se pueden registrar entradas o ajustes.
+                  </div>
+                )}
               </div>
-            </div>
+            </>
           )}
 
           {/* Tipo de Movimiento */}
           <div className="grid grid-cols-3 gap-2">
-            {(["entrada", "salida", "ajuste"] as MovementType[]).map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => {
-                  setMovementType(type);
-                  setReason("");
-                }}
-                disabled={!selectedProduct}
-                className={`rounded-lg border-2 px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold transition-all ${
-                  movementType === type
-                    ? getTypeColor(type) + " border-current"
-                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                }`}
-              >
-                {type === "entrada"
-                  ? "📥 Entrada"
-                  : type === "salida"
+            {(["entrada", "salida", "ajuste"] as MovementType[]).map((type) => {
+              const isDisabled = !selectedProduct || (type === "salida" && selectedProduct.stock === 0);
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => {
+                    setMovementType(type);
+                    setReason("");
+                  }}
+                  disabled={isDisabled}
+                  title={
+                    !selectedProduct
+                      ? "Selecciona un producto primero"
+                      : type === "salida" && selectedProduct.stock === 0
+                      ? "No hay stock disponible para salida"
+                      : ""
+                  }
+                  className={`rounded-lg border-2 px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold transition-all ${
+                    movementType === type
+                      ? getTypeColor(type) + " border-current"
+                      : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  }`}
+                >
+                  {type === "entrada"
+                    ? "📥 Entrada"
+                    : type === "salida"
                     ? "📤 Salida"
                     : "⚙️ Ajuste"}
-              </button>
-            ))}
-          </div>
-
+                </button>
+              );
+            })}
           {/* Cantidad */}
           <div>
             <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
