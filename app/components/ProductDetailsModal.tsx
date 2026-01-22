@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { Product, ProductBatch } from "@/app/types/product";
-import { getProductBatches } from "@/app/actions/products";
+import { getProductBatches, getProduct } from "@/app/actions/products";
 import InventoryMovementModal from "./InventoryMovementModal";
 import InventoryHistoryModal from "./InventoryHistoryModal";
 import BatchesModal from "./BatchesModal";
@@ -25,6 +25,7 @@ export default function ProductDetailsModal({
   const [batches, setBatches] = useState<ProductBatch[]>([]);
   const [loadingBatches, setLoadingBatches] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [currentProduct, setCurrentProduct] = useState<Product>(product);
 
   const loadBatches = async () => {
     setLoadingBatches(true);
@@ -36,6 +37,21 @@ export default function ProductDetailsModal({
   useEffect(() => {
     loadBatches();
   }, [product.id, refreshKey]);
+
+  useEffect(() => {
+    setCurrentProduct(product);
+  }, [product.id, product]);
+
+  const refreshProduct = async () => {
+    try {
+      const { data } = await getProduct(product.id);
+      if (data) {
+        setCurrentProduct(data);
+      }
+    } catch (e) {
+      // Silenciar errores de refresco en UI
+    }
+  };
 
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return "—";
@@ -67,17 +83,17 @@ export default function ProductDetailsModal({
 
         <div className="border-b border-slate-200 px-3 sm:px-4 md:px-6 py-3 sm:py-4">
               <h2 className="text-base sm:text-lg md:text-xl font-bold text-slate-900 pr-8">
-                {product.name}
+                {currentProduct.name}
               </h2>
             </div>
 
             <div className="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4">
-              {product.image_url ? (
+              {currentProduct.image_url ? (
                 <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-50">
                   <div className="relative h-48 sm:h-64 md:h-80 w-full">
                     <Image
-                      src={product.image_url}
-                      alt={product.name}
+                      src={currentProduct.image_url}
+                      alt={currentProduct.name}
                       fill
                       className="object-cover"
                       sizes="(max-width: 640px) 100vw, (max-width: 768px) 90vw, 448px"
@@ -109,25 +125,25 @@ export default function ProductDetailsModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Código de Barras</p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{product.barcode || "—"}</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{currentProduct.barcode || "—"}</p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {product.category && (
+                  {currentProduct.category && (
                     <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800">
-                      {product.category}
+                      {currentProduct.category}
                     </span>
                   )}
-                  {product.specialty && (
+                  {currentProduct.specialty && (
                     <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-                      {product.specialty}
+                      {currentProduct.specialty}
                     </span>
                   )}
                 </div>
 
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Stock Inicial</p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{product.stock_inicial} unidades</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{currentProduct.stock_inicial} unidades</p>
                 </div>
 
                 <div>
@@ -135,39 +151,39 @@ export default function ProductDetailsModal({
                   <p className="mt-1">
                     <span
                       className={`inline-flex items-center rounded-full px-2.5 sm:px-3 py-0.5 sm:py-1 text-xs font-semibold ${
-                        product.stock > 0 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                        currentProduct.stock > 0 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
                       }`}
                     >
-                      {product.stock} unidades
+                      {currentProduct.stock} unidades
                     </span>
                   </p>
                 </div>
 
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Unidad de Medida</p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{product.unit_of_measure || "—"}</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{currentProduct.unit_of_measure || "—"}</p>
                 </div>
 
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Unidad de Reporte</p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{product.reporting_unit || "—"}</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{currentProduct.reporting_unit || "—"}</p>
                 </div>
 
-                {product.category === "Medicamentos" && (
+                {currentProduct.category === "Medicamentos" && (
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Vía de Administración</p>
-                    <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{product.administration_route || "—"}</p>
+                    <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{currentProduct.administration_route || "—"}</p>
                   </div>
                 )}
 
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha de Expedición</p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{formatDate(product.issue_date)}</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{formatDate(currentProduct.issue_date)}</p>
                 </div>
 
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha de Expiración</p>
-                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{formatDate(product.expiration_date)}</p>
+                  <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{formatDate(currentProduct.expiration_date)}</p>
                 </div>
               </div>
 
@@ -353,10 +369,11 @@ export default function ProductDetailsModal({
 
             {showMovementModal && (
               <InventoryMovementModal
-                product={product}
+                product={currentProduct}
                 onClose={() => setShowMovementModal(false)}
-                onSuccess={() => {
+                onSuccess={async () => {
                   setShowMovementModal(false);
+                  await refreshProduct();
                   setRefreshKey((prev) => prev + 1);
                 }}
               />

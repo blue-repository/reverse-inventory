@@ -82,7 +82,7 @@ export default function InventoryMovementModal({
     setIsSubmitting(true);
 
     try {
-      // Si es entrada, crear el lote primero
+      // Si es entrada, crear el lote primero y registrar movimiento de entrada
       if (movementType === "entrada") {
         const formData = new FormData();
         formData.append("batch_number", batchNumber);
@@ -102,6 +102,20 @@ export default function InventoryMovementModal({
 
         if (!batchResult.success) {
           throw new Error(batchResult.error || "Error al crear el lote");
+        }
+
+        // Registrar movimiento de entrada para actualizar stock y dejar trazabilidad
+        const result = await recordInventoryMovement(
+          product.id as string,
+          "entrada",
+          qty,
+          reason || undefined,
+          notes || undefined,
+          currentUser || undefined
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || "Error al registrar el movimiento de entrada");
         }
       } else {
         // Para salidas y ajustes, registrar movimiento normal

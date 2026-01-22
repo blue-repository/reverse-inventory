@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Product, MovementType } from "@/app/types/product";
 import { recordBulkInventoryMovements, searchProducts } from "@/app/actions/products";
 import { useUser } from "@/app/context/UserContext";
@@ -50,6 +51,14 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   const modalRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [itemsWithWarning, setItemsWithWarning] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Filtrar productos basados en búsqueda
   const filteredProducts = searchResults.filter(
@@ -58,6 +67,20 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
       (containsNormalized(p.name, searchQuery) ||
         (p.barcode && containsNormalized(p.barcode, searchQuery)))
   );
+
+  // Calcular posición del dropdown
+  useEffect(() => {
+    if (searchInputRef.current && searchQuery) {
+      const rect = searchInputRef.current.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.top - 10, // Posicionar encima del input
+        left: rect.left,
+        width: Math.max(rect.width, 384) // Mínimo 384px (24rem)
+      });
+    } else {
+      setDropdownPosition(null);
+    }
+  }, [searchQuery, isSearching]);
 
   // Búsqueda remota cuando se escribe en el buscador
   useEffect(() => {
@@ -90,6 +113,28 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
       }
     };
   }, [searchQuery, products]);
+
+  // Validar items cuando cambia el tipo de movimiento
+  const validateItemsForMovementType = (type: MovementType, currentItems: BulkMovementItem[]) => {
+    const warnings = new Set<string>();
+    
+    if (type === "salida") {
+      // En salida, no se puede vender productos sin stock
+      currentItems.forEach((item) => {
+        // Producto sin stock
+        if (item.product.stock === 0) {
+          warnings.add(item.product.id);
+        }
+        // Cantidad mayor al stock disponible
+        else if (item.quantity > item.product.stock) {
+          warnings.add(item.product.id);
+        }
+      });
+    }
+    
+    setItemsWithWarning(warnings);
+    return warnings;
+  };
 
   // Agregar producto al escanear
   const handleProductScanned = (product: Product) => {
@@ -152,6 +197,11 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
         item.product.id === productId ? { ...item, quantity: Math.max(0, quantity) } : item
       )
     );
+    
+    // Revalidar advertencias después de cambiar cantidad
+    if (movementType === "salida") {
+      validateItemsForMovementType(movementType, items);
+    }
   };
 
   // Actualizar motivo
@@ -205,6 +255,12 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
       return;
     }
 
+    // Validar que no haya items con advertencia
+    if (itemsWithWarning.size > 0) {
+      setError("Hay productos con problemas de stock. Por favor remuevalos o cambie el tipo de movimiento.");
+      return;
+    }
+
     // Para entradas, validar que tengan datos de lote
     if (movementType === "entrada") {
       const invalidEntries = items.filter(
@@ -251,7 +307,6 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     }
   };
 
-  const activateReasons = MOVEMENT_REASONS[movementType];
   const itemsWithQuantity = items.filter((item) => item.quantity > 0);
 
   // Detectar clics fuera del modal (solo si no hay scanner abierto)
@@ -259,104 +314,134 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     if (showScanner) return; // No cerrar si el scanner está abierto
     
     const handleClickOutside = (event: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      
+      // Si hay dropdown abierto y se hace clic fuera de él, cerrarlo
+      if (dropdownRef.current && !dropdownRef.current.contains(target) && searchQuery) {
+        setSearchQuery("");
+        return;
+      }
+      
+      // Si se hace clic fuera del modal Y fuera del dropdown, cerrar el modal
+      if (
+        modalRef.current && 
+        !modalRef.current.contains(target) &&
+        (!dropdownRef.current || !dropdownRef.current.contains(target))
+      ) {
+        onClose();
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // ESC para cerrar el dropdown primero
+      if (event.key === "Escape" && searchQuery) {
+        setSearchQuery("");
+        return;
+      }
+      // ESC para cerrar el modal
+      if (event.key === "Escape") {
         onClose();
       }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [onClose, showScanner]);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, showScanner, searchQuery]);
 
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
         <div
           ref={modalRef}
-          className="w-full max-w-3xl max-h-[95vh] rounded-lg bg-white shadow-lg flex flex-col overflow-hidden"
+          className="w-full max-w-7xl max-h-[95vh] rounded-2xl bg-white shadow-2xl flex flex-col overflow-hidden"
         >
         <form onSubmit={handleSubmit} className="flex flex-col h-full">
           {/* Header */}
-          <div className="border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3">
-            <h2 className="text-base sm:text-lg font-bold">Movimiento Masivo de Inventario</h2>
-            <p className="mt-0.5 text-xs sm:text-sm text-slate-600">
-              Selecciona o escanea múltiples productos para hacer movimientos simultáneos
-            </p>
+          <div className="border-b border-slate-200 px-4 sm:px-8 py-4 sm:py-5 bg-white">
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900">Movimiento de Inventario</h2>
           </div>
 
-          {/* Contenido scrolleable */}
-          <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-2.5 sm:space-y-3">
+          {/* Contenido en dos columnas */}
+          <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-4 gap-4 sm:gap-6 p-3 sm:p-6 bg-slate-50">
+          
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs sm:text-sm text-red-800">
+            <div className="col-span-full rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs sm:text-sm text-red-800">
               {error}
             </div>
           )}
 
-          {/* Tipo de movimiento */}
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1.5">
-              Tipo de Movimiento
-            </label>
-            <div className="flex gap-1.5 sm:gap-2">
-              {(["entrada", "salida", "ajuste"] as const).map((type) => (
-                <label key={type} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="movementType"
-                    value={type}
-                    checked={movementType === type}
-                    onChange={(e) => setMovementType(e.target.value as MovementType)}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-xs sm:text-sm text-slate-700 capitalize">{type}</span>
+          {/* COLUMNA IZQUIERDA - CONFIGURACIÓN */}
+          <div className="md:col-span-1 overflow-y-auto overflow-x-visible space-y-3">
+            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Configuración</h3>
+
+              {/* Tipo de movimiento */}
+              <div>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2.5">
+                  Tipo de movimiento
                 </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Búsqueda y escaneo */}
-          <div className="space-y-1.5">
-            <label className="block text-xs sm:text-sm font-medium text-slate-700">
-              Agregar Productos
-            </label>
-            <div className="flex gap-1.5 sm:gap-2 items-start">
-              <div className="flex-1 relative">
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar por nombre o código..."
-                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm placeholder-slate-400 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-1"
-                />
-                
-                {/* Dropdown de resultados */}
-                {searchQuery && filteredProducts.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-1 z-20 bg-white border border-slate-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                    {filteredProducts.slice(0, 8).map((product) => (
-                      <button
-                        key={product.id}
-                        type="button"
-                        onClick={() => addProduct(product)}
-                        className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-slate-100 border-b border-slate-100 last:border-b-0"
+                <div className="flex gap-2 flex-wrap">
+                  {(["entrada", "salida", "ajuste"] as const).map((type) => (
+                    <label key={type} className="cursor-pointer">
+                      <input
+                        type="radio"
+                        name="movementType"
+                        value={type}
+                        checked={movementType === type}
+                        onChange={(e) => {
+                          const newType = e.target.value as MovementType;
+                          setMovementType(newType);
+                          validateItemsForMovementType(newType, items);
+                        }}
+                        className="hidden"
+                      />
+                      <span
+                        className={`inline-block px-4 py-2 rounded-full text-xs sm:text-sm font-semibold border-2 transition-all ${
+                          movementType === type
+                            ? "bg-indigo-100 text-indigo-700 border-indigo-500"
+                            : "bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300"
+                        }`}
                       >
-                        <p className="font-medium text-slate-900">{product.name}</p>
-                        <p className="text-xs text-slate-600">Stock: {product.stock} | Código: {product.barcode || "N/A"}</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {searchQuery && filteredProducts.length === 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-1 z-20 bg-white border border-slate-300 rounded-lg shadow-lg p-2.5">
-                    <p className="text-xs text-slate-600">No hay productos disponibles</p>
-                  </div>
-                )}
+                        {type === "entrada" ? "📥 Entrada" : type === "salida" ? "📤 Salida" : "⚙️ Ajuste"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
+
+              {/* Búsqueda y escaneo */}
+              <div className="relative">
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2.5">
+                  Buscar producto
+                </label>
+                <div className="relative">
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Nombre o código de barras"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                  />
+                  {isSearching && (
+                    <div className="absolute inset-y-0 right-3 flex items-center">
+                      <div className="h-4 w-4 rounded-full border-2 border-slate-300 border-t-slate-900 animate-spin" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Dropdown de resultados renderizado en Portal */}
+              </div>
+
+              {/* Botón escanear */}
               <button
                 type="button"
                 onClick={() => setShowScanner(true)}
-                className="flex items-center gap-1 rounded-lg bg-purple-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-purple-700 transition-colors whitespace-nowrap flex-shrink-0"
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-3 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-purple-700 transition-colors"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -364,7 +449,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                   viewBox="0 0 24 24"
                   strokeWidth={2}
                   stroke="currentColor"
-                  className="h-3.5 w-3.5"
+                  className="h-4 w-4"
                 >
                   <path
                     strokeLinecap="round"
@@ -372,140 +457,203 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                     d="M3 4.5h14.25M3 9h14.25M3 13.5h14.25M17.6 2.5a2.4 2.4 0 1 1 4.8 0 2.4 2.4 0 0 1-4.8 0ZM3 21.75a6.75 6.75 0 0 1 13.5 0"
                   />
                 </svg>
-                <span className="hidden xs:inline">Escanear</span>
+                Escanear código
               </button>
+
+              {/* Motivo general */}
+              <div>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2">
+                  Motivo general
+                </label>
+                <select
+                  value={generalReason}
+                  onChange={(e) => setGeneralReason(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                >
+                  <option value="">— Sin motivo general —</option>
+                  {MOVEMENT_REASONS[movementType].map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Observación general */}
+              <div>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2">
+                  Observación general
+                </label>
+                <textarea
+                  value={generalNotes}
+                  onChange={(e) => setGeneralNotes(e.target.value)}
+                  maxLength={200}
+                  placeholder="Aplica a todos los productos"
+                  rows={3}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Lista de productos */}
-          {items.length === 0 ? (
-            <div className="rounded-lg border-2 border-dashed border-slate-300 px-3 py-6 text-center">
-              <p className="text-xs sm:text-sm text-slate-600">
-                No hay productos. Escanea o selecciona productos para comenzar.
-              </p>
+          {/* COLUMNA DERECHA - PRODUCTOS SELECCIONADOS */}
+          <div className="md:col-span-3 flex flex-col bg-white rounded-xl border border-slate-200 min-h-0 overflow-hidden">
+            <div className="p-4 border-b border-slate-200 flex-shrink-0">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                Productos seleccionados ({items.length})
+              </h3>
             </div>
-          ) : (
-            <div className="space-y-1.5 max-h-[30vh] overflow-y-auto pr-1">
-              {items.map((item) => (
-                <div
-                  key={item.product.id}
-                  className="rounded-lg border border-slate-200 bg-slate-50 p-3"
-                >
-                  <div
-                    className="flex items-center justify-between cursor-pointer"
-                    onClick={() =>
-                      setExpandedProductId(
-                        expandedProductId === item.product.id ? null : item.product.id
-                      )
-                    }
+            <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(95vh - 300px)' }}>
+
+              {items.length === 0 ? (
+                <div className="rounded-lg border-2 border-dashed border-slate-300 px-4 py-8 text-center">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                    className="h-8 w-8 mx-auto text-slate-400 mb-2"
                   >
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-900">{item.product.name}</p>
-                      <p className="text-xs text-slate-600">Stock actual: {item.product.stock}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="number"
-                        min="0"
-                        max={movementType === "salida" ? item.product.stock : undefined}
-                        value={item.quantity}
-                        onChange={(e) => updateItemQuantity(item.product.id, parseInt(e.target.value) || 0)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-16 rounded border border-slate-300 px-2 py-1 text-sm text-right"
-                        placeholder="Cantidad"
-                      />
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeItem(item.product.id);
-                        }}
-                        className="rounded bg-red-100 px-2 py-1 text-xs text-red-700 hover:bg-red-200"
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Detalles expandidos */}
-                  {expandedProductId === item.product.id && item.quantity > 0 && (
-                    <div className="mt-3 border-t border-slate-200 pt-3 space-y-3">
-                      {/* Motivo */}
-                      <div>
-                        <label className="block text-xs font-medium text-slate-700 mb-1">
-                          Motivo {item.reason ? "(específico)" : "(usar general si está vacío)"}
-                        </label>
-                        <select
-                          value={item.reason}
-                          onChange={(e) => updateItemReason(item.product.id, e.target.value)}
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125V4.875c0-.621-.504-1.125-1.125-1.125H2.25c-.621 0-1.125.504-1.125 1.125v1.625c0 .621.504 1.125 1.125 1.125z"
+                    />
+                  </svg>
+                  <p className="text-xs sm:text-sm text-slate-600">
+                    Busca o escanea productos para agregarlos
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {items.map((item) => {
+                    const hasWarning = itemsWithWarning.has(item.product.id);
+                    const warningMessage = 
+                      item.product.stock === 0 
+                        ? "No se puede vender: Stock = 0"
+                        : item.quantity > item.product.stock
+                        ? `No se puede vender: Cantidad (${item.quantity}) > Stock (${item.product.stock})`
+                        : null;
+                    
+                    return (
+                    <div
+                      key={item.product.id}
+                      className={`rounded-lg border p-3.5 space-y-3 ${
+                        hasWarning
+                          ? "border-red-300 bg-red-50"
+                          : "border-slate-200 bg-slate-50"
+                      }`}
+                    >
+                      {/* Header del producto */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <p className={`font-semibold text-sm ${hasWarning ? "text-red-900" : "text-slate-900"}`}>
+                            {item.product.name}
+                          </p>
+                          <p className={`text-xs mt-0.5 ${hasWarning ? "text-red-700" : "text-slate-600"}`}>
+                            Stock actual: {item.product.stock}
+                          </p>
+                          {hasWarning && warningMessage && (
+                            <p className="text-xs font-semibold text-red-600 mt-1">⚠️ {warningMessage}</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item.product.id)}
+                          className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors whitespace-nowrap"
                         >
-                          <option value="">-- Seleccionar motivo --</option>
-                          {activateReasons.map((r) => (
-                            <option key={r} value={r}>
-                              {r}
-                            </option>
-                          ))}
-                        </select>
+                          Quitar
+                        </button>
                       </div>
 
-                      {/* Notas */}
-                      <div>
-                        <label className="block text-xs font-medium text-slate-700 mb-1">
-                          Observación {item.notes ? "(específica)" : "(usar general si está vacía)"}
-                        </label>
-                        <textarea
-                          value={item.notes}
-                          onChange={(e) => updateItemNotes(item.product.id, e.target.value)}
-                          maxLength={200}
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
-                          rows={2}
-                          placeholder="Observación específica para este producto"
-                        />
+                      {/* Cantidad y motivo específico */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">
+                            Cantidad
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={movementType === "salida" ? item.product.stock : undefined}
+                            value={item.quantity}
+                            onChange={(e) => updateItemQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                            className="w-full rounded border border-slate-300 px-2.5 py-1.5 text-xs text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">
+                            Motivo
+                          </label>
+                          <select
+                            value={item.reason}
+                            onChange={(e) => updateItemReason(item.product.id, e.target.value)}
+                            className="w-full rounded border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          >
+                            <option value="">— Motivo —</option>
+                            {MOVEMENT_REASONS[movementType].map((r) => (
+                              <option key={r} value={r}>
+                                {r}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
+
+                      {/* Observación específica */}
+                      {item.quantity > 0 && (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 mb-1">
+                            Observación específica
+                          </label>
+                          <textarea
+                            value={item.notes}
+                            onChange={(e) => updateItemNotes(item.product.id, e.target.value)}
+                            maxLength={100}
+                            rows={2}
+                            placeholder="Observación para este producto"
+                            className="w-full rounded border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                      )}
 
                       {/* Campos de lote para entradas */}
-                      {movementType === "entrada" && (
-                        <div className="space-y-3 border-t border-slate-200 pt-3 bg-green-50 rounded-lg p-3">
-                          <p className="text-xs font-semibold text-green-900">📦 Datos del Lote</p>
-                          
+                      {movementType === "entrada" && item.quantity > 0 && (
+                        <div className="border-t border-slate-200 pt-3 space-y-3 bg-emerald-50 -m-3.5 p-3.5 rounded">
+                          <p className="text-xs font-semibold text-emerald-900">📦 Datos del Lote</p>
+
                           {/* Número de Lote */}
-                          <div>
-                            <label className="block text-xs font-medium text-slate-700 mb-1">
-                              Número de Lote
-                            </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                value={item.batchNumber || ""}
-                                onChange={(e) => {
-                                  setItems((prev) =>
-                                    prev.map((i) =>
-                                      i.product.id === item.product.id
-                                        ? { ...i, batchNumber: e.target.value }
-                                        : i
-                                    )
-                                  );
-                                }}
-                                placeholder="Generar o ingresar..."
-                                className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-xs"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => generateBatchNumber(item.product.id)}
-                                className="rounded bg-blue-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-700"
-                              >
-                                Generar
-                              </button>
-                            </div>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={item.batchNumber || ""}
+                              onChange={(e) => {
+                                setItems((prev) =>
+                                  prev.map((i) =>
+                                    i.product.id === item.product.id
+                                      ? { ...i, batchNumber: e.target.value }
+                                      : i
+                                  )
+                                );
+                              }}
+                              placeholder="Número de lote"
+                              className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => generateBatchNumber(item.product.id)}
+                              className="rounded bg-blue-600 text-white px-2.5 py-1.5 text-xs font-medium hover:bg-blue-700 whitespace-nowrap"
+                            >
+                              Gen.
+                            </button>
                           </div>
 
                           {/* Fechas */}
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 mb-1">
-                                Fecha de Expedición
-                              </label>
+                              <label className="block text-[11px] font-medium text-slate-700 mb-0.5">Expedición</label>
                               <input
                                 type="date"
                                 value={item.issueDate || ""}
@@ -518,12 +666,12 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                                     )
                                   );
                                 }}
-                                className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                                className="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                               />
                             </div>
                             <div>
-                              <label className="block text-xs font-medium text-slate-700 mb-1">
-                                Fecha de Vencimiento <span className="text-red-600">*</span>
+                              <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
+                                Vencimiento <span className="text-red-600">*</span>
                               </label>
                               <input
                                 type="date"
@@ -538,17 +686,15 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                                   );
                                 }}
                                 required
-                                className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                                className="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                               />
                             </div>
                           </div>
 
                           {/* Ubicación */}
                           <div>
-                            <label className="block text-xs font-medium text-slate-700 mb-1">
-                              Ubicación del Lote
-                            </label>
-                            <div className="grid grid-cols-3 gap-2">
+                            <label className="block text-[11px] font-medium text-slate-700 mb-1">Ubicación</label>
+                            <div className="grid grid-cols-3 gap-1.5">
                               <input
                                 type="text"
                                 value={item.shelf || ""}
@@ -561,8 +707,8 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                                     )
                                   );
                                 }}
-                                placeholder="Estantería"
-                                className="rounded border border-slate-300 px-2 py-1.5 text-xs"
+                                placeholder="Est."
+                                className="rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                               />
                               <input
                                 type="text"
@@ -576,8 +722,8 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                                     )
                                   );
                                 }}
-                                placeholder="Cajón/Nivel"
-                                className="rounded border border-slate-300 px-2 py-1.5 text-xs"
+                                placeholder="Nivel"
+                                className="rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                               />
                               <input
                                 type="text"
@@ -591,103 +737,47 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                                     )
                                   );
                                 }}
-                                placeholder="Sección"
-                                className="rounded border border-slate-300 px-2 py-1.5 text-xs"
+                                placeholder="Secc."
+                                className="rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                               />
                             </div>
-                          </div>
-
-                          {/* Notas de Ubicación */}
-                          <div>
-                            <label className="block text-xs font-medium text-slate-700 mb-1">
-                              Notas de Ubicación
-                            </label>
-                            <textarea
-                              value={item.locationNotes || ""}
-                              onChange={(e) => {
-                                setItems((prev) =>
-                                  prev.map((i) =>
-                                    i.product.id === item.product.id
-                                      ? { ...i, locationNotes: e.target.value }
-                                      : i
-                                  )
-                                );
-                              }}
-                              maxLength={200}
-                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
-                              rows={2}
-                              placeholder="Ubicación específica o referencias..."
-                            />
                           </div>
                         </div>
                       )}
                     </div>
-                  )}
+                    );
+                  })}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-
-          {/* Opciones generales */}
-          {itemsWithQuantity.length > 0 && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-              <p className="text-xs font-semibold text-blue-900 mb-2">
-                Motivo y Observación General (opcional)
-              </p>
-              <p className="text-xs text-blue-700 mb-3">
-                Se usarán si un producto específico no tiene datos ingresados
-              </p>
-              <div className="space-y-2">
-                <select
-                  value={generalReason}
-                  onChange={(e) => setGeneralReason(e.target.value)}
-                  className="w-full rounded border border-blue-300 px-2 py-1.5 text-xs"
-                >
-                  <option value="">-- Sin motivo general --</option>
-                  {activateReasons.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-                <textarea
-                  value={generalNotes}
-                  onChange={(e) => setGeneralNotes(e.target.value)}
-                  maxLength={200}
-                  className="w-full rounded border border-blue-300 px-2 py-1.5 text-xs"
-                  rows={2}
-                  placeholder="Observación general para todos los movimientos"
-                />
-              </div>
-            </div>
-          )}
+          </div>
           </div>
 
-          {/* Botones - siempre visible */}
-          <div className="border-t border-slate-200 pt-2.5 sm:pt-3 px-3 sm:px-6 pb-3 sm:pb-4 flex flex-col-reverse sm:flex-row gap-2 justify-end bg-white">
+          {/* Footer */}
+          <div className="border-t border-slate-200 px-4 sm:px-8 py-3.5 sm:py-4 flex justify-between gap-3 bg-white">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="w-full sm:w-auto rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-lg border border-slate-300 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={isSubmitting || itemsWithQuantity.length === 0}
-              className="w-full sm:w-auto rounded-lg bg-slate-900 px-3 py-2 text-xs sm:text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+              className="rounded-lg bg-indigo-600 px-6 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
               {isSubmitting
                 ? "Guardando..."
-                : `Guardar ${itemsWithQuantity.length} movimiento(s)`}
+                : `Guardar movimiento${itemsWithQuantity.length > 1 ? `s (${itemsWithQuantity.length})` : ""}`}
             </button>
           </div>
         </form>
         </div>
       </div>
 
-      {/* Scanner Modal - Renderizado fuera del BulkMovementModal para evitar conflictos */}
+      {/* Scanner Modal */}
       {showScanner && (
         <BarcodeScannerModal
           mode="product"
@@ -697,6 +787,85 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
             setShowScanner(false);
           }}
         />
+      )}
+
+      {/* Dropdown de resultados en Portal */}
+      {mounted && dropdownPosition && searchQuery && createPortal(
+        <>
+          {!isSearching && filteredProducts.length > 0 && (
+            <div 
+              ref={dropdownRef}
+              style={{
+                position: 'fixed',
+                top: `${dropdownPosition.top}px`,
+                left: `${dropdownPosition.left}px`,
+                width: `${dropdownPosition.width}px`,
+                transform: 'translateY(-100%)',
+                zIndex: 9999
+              }}
+              className="bg-white border border-slate-300 rounded-lg shadow-2xl max-h-64 overflow-y-auto"
+            >
+              {filteredProducts.slice(0, 10).map((product) => {
+                const isDisabled = movementType === "salida" && product.stock === 0;
+                return (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      !isDisabled && addProduct(product);
+                    }}
+                    disabled={isDisabled}
+                    className={`w-full text-left px-3 py-2.5 text-xs border-b border-slate-100 last:border-b-0 ${
+                      isDisabled
+                        ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                        : "hover:bg-indigo-50 cursor-pointer transition-colors"
+                    }`}
+                  >
+                    <p className="font-medium text-slate-900 mb-0.5">{product.name}</p>
+                    <p className="text-xs text-slate-600">Stock: {product.stock} | {product.barcode || "N/A"}</p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {isSearching && (
+            <div 
+              ref={dropdownRef}
+              style={{
+                position: 'fixed',
+                top: `${dropdownPosition.top}px`,
+                left: `${dropdownPosition.left}px`,
+                width: `${dropdownPosition.width}px`,
+                transform: 'translateY(-100%)',
+                zIndex: 9999
+              }}
+              className="bg-white border border-slate-300 rounded-lg shadow-2xl p-3"
+            >
+              <p className="text-xs text-slate-600 flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-900 animate-spin" />
+                Buscando...
+              </p>
+            </div>
+          )}
+          {!isSearching && filteredProducts.length === 0 && (
+            <div 
+              ref={dropdownRef}
+              style={{
+                position: 'fixed',
+                top: `${dropdownPosition.top}px`,
+                left: `${dropdownPosition.left}px`,
+                width: `${dropdownPosition.width}px`,
+                transform: 'translateY(-100%)',
+                zIndex: 9999
+              }}
+              className="bg-white border border-slate-300 rounded-lg shadow-2xl p-3"
+            >
+              <p className="text-xs text-slate-600">No hay productos</p>
+            </div>
+          )}
+        </>,
+        document.body
       )}
     </>
   );
