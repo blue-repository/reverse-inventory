@@ -8,6 +8,58 @@ import { useUser } from "@/app/context/UserContext";
 import { containsNormalized } from "@/app/lib/search-utils";
 import BarcodeScannerModal from "@/app/components/BarcodeScannerModal";
 
+// Componente para secciones colapsables
+function CollapsibleSection({ 
+  title, 
+  children, 
+  defaultOpen = false,
+  icon = "📋",
+  badge
+}: { 
+  title: string; 
+  children: React.ReactNode; 
+  defaultOpen?: boolean;
+  icon?: string;
+  badge?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors"
+      >
+        <span className="text-xs sm:text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <span>{icon}</span>
+          {title}
+          {badge && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold">
+              {badge}
+            </span>
+          )}
+        </span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={2}
+          stroke="currentColor"
+          className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div className="p-3 bg-white border-t border-slate-100">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type BulkMovementItem = {
   product: Product;
   quantity: number;
@@ -437,568 +489,268 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4">
+      <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-0 sm:p-4 overflow-y-auto">
         <div
           ref={modalRef}
-          className="w-full max-w-7xl max-h-[95vh] rounded-2xl bg-white shadow-2xl flex flex-col overflow-hidden"
+          className="w-full max-w-7xl bg-white sm:rounded-2xl shadow-2xl flex flex-col min-h-screen sm:min-h-0 sm:my-4 sm:max-h-[calc(100vh-2rem)]"
         >
-        <form onSubmit={handleSubmit} className="flex flex-col h-full">
-          {/* Header */}
-          <div className="border-b border-slate-200 px-4 sm:px-8 py-4 sm:py-5 bg-white">
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900">Movimiento de Inventario</h2>
+        <form onSubmit={handleSubmit} className="flex flex-col h-full sm:h-auto">
+          {/* Header fijo */}
+          <div className="flex-shrink-0 border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-4 bg-white sticky top-0 z-10 sm:static">
+            <h2 className="text-base sm:text-lg font-bold text-slate-900">Movimiento de Inventario</h2>
+            <p className="text-xs sm:text-sm text-slate-600 mt-0.5">Gestiona múltiples productos</p>
           </div>
 
-          {/* Contenido en dos columnas */}
-          <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-4 gap-4 sm:gap-6 p-3 sm:p-6 bg-slate-50">
-          
           {error && (
-            <div className="col-span-full rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs sm:text-sm text-red-800">
+            <div className="mx-4 sm:mx-6 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs sm:text-sm text-red-800">
               {error}
             </div>
           )}
 
+          {/* Contenido scrollable */}
+          <div className="flex-1 overflow-y-auto bg-slate-50 px-4 sm:px-6 py-4">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          
           {/* COLUMNA IZQUIERDA - CONFIGURACIÓN */}
-          <div className="md:col-span-1 overflow-y-auto overflow-x-visible space-y-3" style={{ maxHeight: 'calc(95vh - 200px)' }}>
-            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Configuración</h3>
-
-              {/* Tipo de movimiento */}
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2.5">
-                  Tipo de movimiento
-                </label>
-                <div className="flex gap-2 flex-wrap">
-                  {(["entrada", "salida", "ajuste"] as const).map((type) => (
-                    <label key={type} className="cursor-pointer">
-                      <input
-                        type="radio"
-                        name="movementType"
-                        value={type}
-                        checked={movementType === type}
-                        onChange={(e) => {
-                          const newType = e.target.value as MovementType;
-                          setMovementType(newType);
-                          validateItemsForMovementType(newType, items);
-                        }}
-                        className="hidden"
-                      />
-                      <span
-                        className={`inline-block px-4 py-2 rounded-full text-xs sm:text-sm font-semibold border-2 transition-all ${
-                          movementType === type
-                            ? "bg-indigo-100 text-indigo-700 border-indigo-500"
-                            : "bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        {type === "entrada" ? "📥 Entrada" : type === "salida" ? "📤 Salida" : "⚙️ Ajuste"}
-                      </span>
-                    </label>
-                  ))}
+          <div className="lg:col-span-1 space-y-3">
+            <CollapsibleSection title="Configuración" icon="⚙️" defaultOpen={true}>
+              <div className="space-y-3">
+                {/* Tipo de movimiento */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-2">
+                    Tipo de movimiento
+                  </label>
+                  <div className="flex gap-2 flex-wrap">
+                    {(["entrada", "salida", "ajuste"] as const).map((type) => (
+                      <label key={type} className="cursor-pointer flex-1 min-w-[80px]">
+                        <input
+                          type="radio"
+                          name="movementType"
+                          value={type}
+                          checked={movementType === type}
+                          onChange={(e) => {
+                            const newType = e.target.value as MovementType;
+                            setMovementType(newType);
+                            validateItemsForMovementType(newType, items);
+                          }}
+                          className="hidden"
+                        />
+                        <span
+                          className={`block text-center px-2 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all ${
+                            movementType === type
+                              ? "bg-indigo-100 text-indigo-700 border-indigo-500"
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          {type === "entrada" ? "📥" : type === "salida" ? "📤" : "⚙️"}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              {/* Búsqueda y escaneo */}
-              <div className="relative">
-                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2.5">
-                  Buscar producto
-                </label>
-                <div className="relative">
+                {/* Búsqueda */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Buscar producto
+                  </label>
                   <input
                     ref={searchInputRef}
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Nombre o código de barras"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                    placeholder="Nombre o código"
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                   {isSearching && (
-                    <div className="absolute inset-y-0 right-3 flex items-center">
-                      <div className="h-4 w-4 rounded-full border-2 border-slate-300 border-t-slate-900 animate-spin" />
+                    <div className="absolute inset-y-0 right-2 flex items-center">
+                      <div className="h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-900 animate-spin" />
                     </div>
                   )}
                 </div>
 
-                {/* Dropdown de resultados renderizado en Portal */}
-              </div>
-
-              {/* Botón escanear */}
-              <button
-                type="button"
-                onClick={() => setShowScanner(true)}
-                className="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-3 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-purple-700 transition-colors"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  stroke="currentColor"
-                  className="h-4 w-4"
+                {/* Botón escanear */}
+                <button
+                  type="button"
+                  onClick={() => setShowScanner(true)}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-xs font-semibold text-white hover:bg-purple-700"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M3 4.5h14.25M3 9h14.25M3 13.5h14.25M17.6 2.5a2.4 2.4 0 1 1 4.8 0 2.4 2.4 0 0 1-4.8 0ZM3 21.75a6.75 6.75 0 0 1 13.5 0"
-                  />
-                </svg>
-                Escanear código
-              </button>
-
-              {/* Motivo general */}
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2">
-                  Motivo general
-                </label>
-                <select
-                  value={generalReason}
-                  onChange={(e) => setGeneralReason(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
-                >
-                  <option value="">— Sin motivo general —</option>
-                  {MOVEMENT_REASONS[movementType].map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4.5h14.25M3 9h14.25M3 13.5h14.25" />
+                  </svg>
+                  Escanear
+                </button>
               </div>
+            </CollapsibleSection>
 
-              {/* Observación general */}
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2">
-                  Observación general
-                </label>
-                <textarea
-                  value={generalNotes}
-                  onChange={(e) => setGeneralNotes(e.target.value)}
-                  maxLength={200}
-                  placeholder="Aplica a todos los productos"
-                  rows={3}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
-                />
-              </div>
-
-              {/* Campos de receta médica (solo para salida con "Entrega de receta") */}
-              {movementType === "salida" && generalReason === "Entrega de receta" && (
-                <div className="space-y-3 border-t border-slate-200 pt-3">
-                  <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide">📋 Datos de Receta (General)</p>
-                  
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Fecha de receta
-                    </label>
-                    <input
-                      type="date"
-                      value={generalRecipeDate}
-                      onChange={(e) => setGeneralRecipeDate(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Nombre del paciente
-                    </label>
-                    <input
-                      type="text"
-                      value={generalPatientName}
-                      onChange={(e) => setGeneralPatientName(e.target.value)}
-                      placeholder="Nombre completo del paciente"
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Prescrito por (Médico)
-                    </label>
-                    <input
-                      type="text"
-                      value={generalPrescribedBy}
-                      onChange={(e) => setGeneralPrescribedBy(e.target.value)}
-                      placeholder="Dr(a). Nombre del médico"
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Código CIE
-                    </label>
-                    <input
-                      type="text"
-                      value={generalCieCode}
-                      onChange={(e) => setGeneralCieCode(e.target.value)}
-                      placeholder="Código CIE-10"
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Notas de receta
-                    </label>
-                    <textarea
-                      value={generalRecipeNotes}
-                      onChange={(e) => setGeneralRecipeNotes(e.target.value)}
-                      maxLength={200}
-                      placeholder="Observaciones sobre la receta médica"
-                      rows={2}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
+            <CollapsibleSection title="Datos Generales" icon="📋" defaultOpen={true}>
+              <div className="space-y-2.5">
+                {/* Motivo general */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Motivo general
+                  </label>
+                  <select
+                    value={generalReason}
+                    onChange={(e) => setGeneralReason(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">— Sin motivo general —</option>
+                    {MOVEMENT_REASONS[movementType].map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
                 </div>
-              )}
-            </div>
+
+                {/* Observación general */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Observación general
+                  </label>
+                  <textarea
+                    value={generalNotes}
+                    onChange={(e) => setGeneralNotes(e.target.value)}
+                    maxLength={200}
+                    placeholder="Aplica a todos"
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+            </CollapsibleSection>
+
+            {/* Receta médica general */}
+            {movementType === "salida" && generalReason === "Entrega de receta" && (
+              <CollapsibleSection title="Receta General" icon="💊" defaultOpen={false}>
+                <div className="space-y-2">
+                  <input
+                    type="date"
+                    value={generalRecipeDate}
+                    onChange={(e) => setGeneralRecipeDate(e.target.value)}
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                    placeholder="Fecha"
+                  />
+                  <input
+                    type="text"
+                    value={generalPatientName}
+                    onChange={(e) => setGeneralPatientName(e.target.value)}
+                    placeholder="Paciente"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                  />
+                  <input
+                    type="text"
+                    value={generalPrescribedBy}
+                    onChange={(e) => setGeneralPrescribedBy(e.target.value)}
+                    placeholder="Médico"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                  />
+                  <input
+                    type="text"
+                    value={generalCieCode}
+                    onChange={(e) => setGeneralCieCode(e.target.value)}
+                    placeholder="Código CIE"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                  />
+                </div>
+              </CollapsibleSection>
+            )}
           </div>
 
-          {/* COLUMNA DERECHA - PRODUCTOS SELECCIONADOS */}
-          <div className="md:col-span-3 flex flex-col bg-white rounded-xl border border-slate-200 min-h-0 overflow-hidden">
-            <div className="p-4 border-b border-slate-200 flex-shrink-0">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                Productos seleccionados ({items.length})
-              </h3>
-            </div>
-            <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(95vh - 300px)' }}>
+          {/* COLUMNA DERECHA - PRODUCTOS */}
+          <div className="lg:col-span-3">
+            <CollapsibleSection 
+              title="Productos seleccionados" 
+              icon="📦" 
+              defaultOpen={true}
+              badge={items.length > 0 ? `${items.length}` : undefined}
+            >
+              <div className="space-y-2.5 max-h-[50vh] overflow-y-auto pr-1">
 
               {items.length === 0 ? (
-                <div className="rounded-lg border-2 border-dashed border-slate-300 px-4 py-8 text-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth={1.5}
-                    stroke="currentColor"
-                    className="h-8 w-8 mx-auto text-slate-400 mb-2"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125V4.875c0-.621-.504-1.125-1.125-1.125H2.25c-.621 0-1.125.504-1.125 1.125v1.625c0 .621.504 1.125 1.125 1.125z"
-                    />
-                  </svg>
-                  <p className="text-xs sm:text-sm text-slate-600">
-                    Busca o escanea productos para agregarlos
-                  </p>
+                <div className="rounded-lg border-2 border-dashed border-slate-300 px-4 py-6 text-center">
+                  <p className="text-xs text-slate-600">Busca o escanea productos</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {items.map((item) => {
-                    const hasWarning = itemsWithWarning.has(item.product.id);
-                    const warningMessage = 
-                      item.product.stock === 0 
-                        ? "No se puede vender: Stock = 0"
-                        : item.quantity > item.product.stock
-                        ? `No se puede vender: Cantidad (${item.quantity}) > Stock (${item.product.stock})`
-                        : null;
-                    
-                    return (
-                    <div
-                      key={item.product.id}
-                      className={`rounded-lg border p-3.5 space-y-3 ${
-                        hasWarning
-                          ? "border-red-300 bg-red-50"
-                          : "border-slate-200 bg-slate-50"
-                      }`}
-                    >
-                      {/* Header del producto */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <p className={`font-semibold text-sm ${hasWarning ? "text-red-900" : "text-slate-900"}`}>
-                            {item.product.name}
-                          </p>
-                          <p className={`text-xs mt-0.5 ${hasWarning ? "text-red-700" : "text-slate-600"}`}>
-                            Stock actual: {item.product.stock}
-                          </p>
-                          {hasWarning && warningMessage && (
-                            <p className="text-xs font-semibold text-red-600 mt-1">⚠️ {warningMessage}</p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeItem(item.product.id)}
-                          className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors whitespace-nowrap"
-                        >
-                          Quitar
-                        </button>
-                      </div>
-
-                      {/* Cantidad y motivo específico */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">
-                            Cantidad
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max={movementType === "salida" ? item.product.stock : undefined}
-                            value={item.quantity}
-                            onChange={(e) => updateItemQuantity(item.product.id, parseInt(e.target.value) || 0)}
-                            className="w-full rounded border border-slate-300 px-2.5 py-1.5 text-xs text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            placeholder="0"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">
-                            Motivo
-                          </label>
-                          <select
-                            value={item.reason}
-                            onChange={(e) => updateItemReason(item.product.id, e.target.value)}
-                            className="w-full rounded border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          >
-                            <option value="">— Motivo —</option>
-                            {MOVEMENT_REASONS[movementType].map((r) => (
-                              <option key={r} value={r}>
-                                {r}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Observación específica */}
-                      {item.quantity > 0 && (
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">
-                            Observación específica
-                          </label>
-                          <textarea
-                            value={item.notes}
-                            onChange={(e) => updateItemNotes(item.product.id, e.target.value)}
-                            maxLength={100}
-                            rows={2}
-                            placeholder="Observación para este producto"
-                            className="w-full rounded border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
-                        </div>
-                      )}
-
-                      {/* Campos de receta médica individual (solo para salida con "Entrega de receta") */}
-                      {movementType === "salida" && item.quantity > 0 && (item.reason === "Entrega de receta") && (
-                        <div className="border-t border-slate-200 pt-3 space-y-2 bg-emerald-50 -m-3.5 p-3.5 rounded">
-                          <p className="text-xs font-semibold text-emerald-900">📋 Datos de Receta (Individual)</p>
-
-                          <div>
-                            <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
-                              Fecha de receta
-                            </label>
-                            <input
-                              type="date"
-                              value={item.recipeDate || ""}
-                              onChange={(e) => updateItemRecipeDate(item.product.id, e.target.value)}
-                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
-                              Nombre del paciente
-                            </label>
-                            <input
-                              type="text"
-                              value={item.patientName || ""}
-                              onChange={(e) => updateItemPatientName(item.product.id, e.target.value)}
-                              placeholder="Nombre completo del paciente"
-                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
-                              Prescrito por (Médico)
-                            </label>
-                            <input
-                              type="text"
-                              value={item.prescribedBy || ""}
-                              onChange={(e) => updateItemPrescribedBy(item.product.id, e.target.value)}
-                              placeholder="Dr(a). Nombre del médico"
-                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
-                              Código CIE
-                            </label>
-                            <input
-                              type="text"
-                              value={item.cieCode || ""}
-                              onChange={(e) => updateItemCieCode(item.product.id, e.target.value)}
-                              placeholder="Código CIE-10"
-                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
-                              Notas de receta
-                            </label>
-                            <textarea
-                              value={item.recipeNotes || ""}
-                              onChange={(e) => updateItemRecipeNotes(item.product.id, e.target.value)}
-                              maxLength={150}
-                              placeholder="Observaciones sobre la receta"
-                              rows={2}
-                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Campos de lote para entradas */}
-                      {movementType === "entrada" && item.quantity > 0 && (
-                        <div className="border-t border-slate-200 pt-3 space-y-3 bg-emerald-50 -m-3.5 p-3.5 rounded">
-                          <p className="text-xs font-semibold text-emerald-900">📦 Datos del Lote</p>
-
-                          {/* Número de Lote */}
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={item.batchNumber || ""}
-                              onChange={(e) => {
-                                setItems((prev) =>
-                                  prev.map((i) =>
-                                    i.product.id === item.product.id
-                                      ? { ...i, batchNumber: e.target.value }
-                                      : i
-                                  )
-                                );
-                              }}
-                              placeholder="Número de lote"
-                              className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => generateBatchNumber(item.product.id)}
-                              className="rounded bg-blue-600 text-white px-2.5 py-1.5 text-xs font-medium hover:bg-blue-700 whitespace-nowrap"
-                            >
-                              Gen.
-                            </button>
-                          </div>
-
-                          {/* Fechas */}
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[11px] font-medium text-slate-700 mb-0.5">Expedición</label>
-                              <input
-                                type="date"
-                                value={item.issueDate || ""}
-                                onChange={(e) => {
-                                  setItems((prev) =>
-                                    prev.map((i) =>
-                                      i.product.id === item.product.id
-                                        ? { ...i, issueDate: e.target.value }
-                                        : i
-                                    )
-                                  );
-                                }}
-                                className="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
-                                Vencimiento <span className="text-red-600">*</span>
-                              </label>
-                              <input
-                                type="date"
-                                value={item.expirationDate || ""}
-                                onChange={(e) => {
-                                  setItems((prev) =>
-                                    prev.map((i) =>
-                                      i.product.id === item.product.id
-                                        ? { ...i, expirationDate: e.target.value }
-                                        : i
-                                    )
-                                  );
-                                }}
-                                required
-                                className="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Ubicación */}
-                          <div>
-                            <label className="block text-[11px] font-medium text-slate-700 mb-1">Ubicación</label>
-                            <div className="grid grid-cols-3 gap-1.5">
-                              <input
-                                type="text"
-                                value={item.shelf || ""}
-                                onChange={(e) => {
-                                  setItems((prev) =>
-                                    prev.map((i) =>
-                                      i.product.id === item.product.id
-                                        ? { ...i, shelf: e.target.value }
-                                        : i
-                                    )
-                                  );
-                                }}
-                                placeholder="Est."
-                                className="rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              />
-                              <input
-                                type="text"
-                                value={item.drawer || ""}
-                                onChange={(e) => {
-                                  setItems((prev) =>
-                                    prev.map((i) =>
-                                      i.product.id === item.product.id
-                                        ? { ...i, drawer: e.target.value }
-                                        : i
-                                    )
-                                  );
-                                }}
-                                placeholder="Nivel"
-                                className="rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              />
-                              <input
-                                type="text"
-                                value={item.section || ""}
-                                onChange={(e) => {
-                                  setItems((prev) =>
-                                    prev.map((i) =>
-                                      i.product.id === item.product.id
-                                        ? { ...i, section: e.target.value }
-                                        : i
-                                    )
-                                  );
-                                }}
-                                placeholder="Secc."
-                                className="rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                items.map((item) => {
+                  const hasWarning = itemsWithWarning.has(item.product.id);
+                  const warningMessage = 
+                    item.product.stock === 0 
+                      ? "Stock = 0"
+                      : item.quantity > item.product.stock
+                      ? `Cant. > Stock`
+                      : null;
+                  
+                  return (
+                  <div
+                    key={item.product.id}
+                    className={`rounded-lg border p-2.5 space-y-2 ${
+                      hasWarning ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"
+                    }`}
+                  >
+                    {/* Campos simplificados */}
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-medium">{item.product.name}</span>
+                      <span className="text-slate-600">Stock: {item.product.stock}</span>
+                      {hasWarning && <span className="text-red-600">⚠️</span>}
                     </div>
-                    );
-                  })}
-                </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.quantity}
+                        onChange={(e) => updateItemQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                        placeholder="Cantidad"
+                        className="rounded border px-2 py-1 text-xs"
+                      />
+                      <select
+                        value={item.reason}
+                        onChange={(e) => updateItemReason(item.product.id, e.target.value)}
+                        className="rounded border px-2 py-1 text-xs"
+                      >
+                        <option value="">Motivo</option>
+                        {MOVEMENT_REASONS[movementType].map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={() => removeItem(item.product.id)}
+                      className="text-xs text-red-600"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                  );
+                })
               )}
-            </div>
+              </div>
+            </CollapsibleSection>
+          </div>
           </div>
           </div>
 
-          {/* Footer */}
-          <div className="border-t border-slate-200 px-4 sm:px-8 py-3.5 sm:py-4 flex justify-between gap-3 bg-white">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="rounded-lg border border-slate-300 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || itemsWithQuantity.length === 0}
-              className="rounded-lg bg-indigo-600 px-6 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-            >
-              {isSubmitting
-                ? "Guardando..."
-                : `Guardar movimiento${itemsWithQuantity.length > 1 ? `s (${itemsWithQuantity.length})` : ""}`}
-            </button>
+          {/* Footer SIEMPRE VISIBLE */}
+          <div className="flex-shrink-0 border-t border-slate-200 px-4 sm:px-6 py-3 bg-white sticky bottom-0 z-10 sm:static">
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center justify-between">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="px-4 py-2 text-xs sm:text-sm font-semibold rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || itemsWithQuantity.length === 0}
+                className="px-6 py-2 text-xs sm:text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {isSubmitting ? "Guardando..." : `Guardar (${itemsWithQuantity.length})`}
+              </button>
+            </div>
           </div>
         </form>
         </div>
