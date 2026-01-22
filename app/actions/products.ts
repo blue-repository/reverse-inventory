@@ -41,12 +41,28 @@ export async function searchProducts(
         );
       });
 
+      // Ordenar: primero por stock (descendente para que stock > 0 aparezca primero), luego alfabéticamente
+      filtered.sort((a, b) => {
+        // Primero por stock (mayor a menor)
+        if (b.stock !== a.stock) {
+          return b.stock - a.stock;
+        }
+        // Luego alfabéticamente por nombre
+        return (a.name || "").localeCompare(b.name || "");
+      });
+
       // Aplicar paginación al resultado filtrado
       const paginatedData = filtered.slice(pageStart, pageEnd + 1);
       return { data: paginatedData, error: null, count: filtered.length };
     }
 
-    // Sin query, devolver todos los productos paginados
+    // Sin query, devolver todos los productos paginados (también ordenados)
+    allProducts.sort((a, b) => {
+      if (b.stock !== a.stock) {
+        return b.stock - a.stock;
+      }
+      return (a.name || "").localeCompare(b.name || "");
+    });
     const paginatedData = allProducts.slice(pageStart, pageEnd + 1);
     return { data: paginatedData, error: null, count: allProducts.length };
   } catch (err: any) {
@@ -86,6 +102,21 @@ export async function searchProductByBarcode(barcode: string) {
   }
 
   return { data: match, error: null };
+}
+
+export async function getProduct(productId: string) {
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .eq("id", productId)
+    .is("deleted_at", null)
+    .single();
+
+  if (error || !data) {
+    return { data: null, error: error?.message || "Producto no encontrado" };
+  }
+
+  return { data, error: null };
 }
 
 export async function createProduct(formData: FormData, createdBy?: string) {
