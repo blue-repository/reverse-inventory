@@ -21,6 +21,12 @@ type BulkMovementItem = {
   drawer?: string;
   section?: string;
   locationNotes?: string;
+  // Campos de receta médica (solo para salidas con "Entrega de receta")
+  recipeDate?: string; // Disponible para todos los movimientos
+  patientName?: string;
+  prescribedBy?: string;
+  cieCode?: string;
+  recipeNotes?: string;
 };
 
 type BulkMovementModalProps = {
@@ -44,6 +50,11 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   const [isSearching, setIsSearching] = useState(false);
   const [generalReason, setGeneralReason] = useState<string>("");
   const [generalNotes, setGeneralNotes] = useState<string>("");
+  const [generalRecipeDate, setGeneralRecipeDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [generalPatientName, setGeneralPatientName] = useState<string>("");
+  const [generalPrescribedBy, setGeneralPrescribedBy] = useState<string>("");
+  const [generalCieCode, setGeneralCieCode] = useState<string>("");
+  const [generalRecipeNotes, setGeneralRecipeNotes] = useState<string>("");
   const [showScanner, setShowScanner] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,6 +168,11 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           drawer: "",
           section: "",
           locationNotes: "",
+          recipeDate: new Date().toISOString().split("T")[0],
+          patientName: "",
+          prescribedBy: "",
+          cieCode: "",
+          recipeNotes: "",
         },
       ];
     });
@@ -179,6 +195,11 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
         drawer: "",
         section: "",
         locationNotes: "",
+        recipeDate: new Date().toISOString().split("T")[0],
+        patientName: "",
+        prescribedBy: "",
+        cieCode: "",
+        recipeNotes: "",
       },
     ]);
     setSearchQuery("");
@@ -238,6 +259,47 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     );
   };
 
+  // Actualizar campos de receta
+  const updateItemRecipeDate = (productId: string, recipeDate: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, recipeDate } : item
+      )
+    );
+  };
+
+  const updateItemPatientName = (productId: string, patientName: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, patientName } : item
+      )
+    );
+  };
+
+  const updateItemPrescribedBy = (productId: string, prescribedBy: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, prescribedBy } : item
+      )
+    );
+  };
+
+  const updateItemCieCode = (productId: string, cieCode: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, cieCode } : item
+      )
+    );
+  };
+
+  const updateItemRecipeNotes = (productId: string, recipeNotes: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, recipeNotes } : item
+      )
+    );
+  };
+
   // Guardar movimientos
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -276,25 +338,46 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
 
     setIsSubmitting(true);
     try {
+      // Generar UUIDs
+      const movementGroupId = crypto.randomUUID();
+      const prescriptionGroupId = crypto.randomUUID();
+      const movementDate = new Date().toISOString();
+
       // Procesar cada movimiento
       const movements = items
         .filter((item) => item.quantity > 0)
-        .map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          type: movementType as MovementType,
-          reason: item.reason || generalReason || "Sin especificar",
-          notes: item.notes || generalNotes || "",
-          user_id: currentUser || "Sistema",
-          // Datos de lote para entradas
-          batch_number: movementType === "entrada" ? item.batchNumber : undefined,
-          issue_date: movementType === "entrada" ? item.issueDate : undefined,
-          expiration_date: movementType === "entrada" ? item.expirationDate : undefined,
-          shelf: movementType === "entrada" ? item.shelf : undefined,
-          drawer: movementType === "entrada" ? item.drawer : undefined,
-          section: movementType === "entrada" ? item.section : undefined,
-          location_notes: movementType === "entrada" ? item.locationNotes : undefined,
-        }));
+        .map((item) => {
+          const itemReason = item.reason || generalReason || "Sin especificar";
+          const isRecipeMovement = itemReason === "Entrega de receta";
+          
+          return {
+            product_id: item.product.id,
+            quantity: item.quantity,
+            type: movementType as MovementType,
+            reason: itemReason,
+            notes: item.notes || generalNotes || "",
+            user_id: currentUser || "Sistema",
+            // Campos automáticos
+            movement_group_id: movementGroupId,
+            movement_date: movementDate,
+            is_recipe_movement: isRecipeMovement,
+            // Datos de lote para entradas
+            batch_number: movementType === "entrada" ? item.batchNumber : undefined,
+            issue_date: movementType === "entrada" ? item.issueDate : undefined,
+            expiration_date: movementType === "entrada" ? item.expirationDate : undefined,
+            shelf: movementType === "entrada" ? item.shelf : undefined,
+            drawer: movementType === "entrada" ? item.drawer : undefined,
+            section: movementType === "entrada" ? item.section : undefined,
+            location_notes: movementType === "entrada" ? item.locationNotes : undefined,
+            // Campos de receta médica (solo para salidas con "Entrega de receta")
+            prescription_group_id: isRecipeMovement ? prescriptionGroupId : undefined,
+            recipe_date: isRecipeMovement ? (item.recipeDate || generalRecipeDate || new Date().toISOString().split("T")[0]) : undefined,
+            patient_name: isRecipeMovement ? (item.patientName || generalPatientName || "") : undefined,
+            prescribed_by: isRecipeMovement ? (item.prescribedBy || generalPrescribedBy || "") : undefined,
+            cie_code: isRecipeMovement ? (item.cieCode || generalCieCode || "") : undefined,
+            recipe_notes: isRecipeMovement ? (item.recipeNotes || generalRecipeNotes || "") : undefined,
+          };
+        });
 
       await recordBulkInventoryMovements(movements);
 
@@ -375,7 +458,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           )}
 
           {/* COLUMNA IZQUIERDA - CONFIGURACIÓN */}
-          <div className="md:col-span-1 overflow-y-auto overflow-x-visible space-y-3">
+          <div className="md:col-span-1 overflow-y-auto overflow-x-visible space-y-3" style={{ maxHeight: 'calc(95vh - 200px)' }}>
             <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide">Configuración</h3>
 
@@ -493,6 +576,78 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
                 />
               </div>
+
+              {/* Campos de receta médica (solo para salida con "Entrega de receta") */}
+              {movementType === "salida" && generalReason === "Entrega de receta" && (
+                <div className="space-y-3 border-t border-slate-200 pt-3">
+                  <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide">📋 Datos de Receta (General)</p>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Fecha de receta
+                    </label>
+                    <input
+                      type="date"
+                      value={generalRecipeDate}
+                      onChange={(e) => setGeneralRecipeDate(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Nombre del paciente
+                    </label>
+                    <input
+                      type="text"
+                      value={generalPatientName}
+                      onChange={(e) => setGeneralPatientName(e.target.value)}
+                      placeholder="Nombre completo del paciente"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Prescrito por (Médico)
+                    </label>
+                    <input
+                      type="text"
+                      value={generalPrescribedBy}
+                      onChange={(e) => setGeneralPrescribedBy(e.target.value)}
+                      placeholder="Dr(a). Nombre del médico"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Código CIE
+                    </label>
+                    <input
+                      type="text"
+                      value={generalCieCode}
+                      onChange={(e) => setGeneralCieCode(e.target.value)}
+                      placeholder="Código CIE-10"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Notas de receta
+                    </label>
+                    <textarea
+                      value={generalRecipeNotes}
+                      onChange={(e) => setGeneralRecipeNotes(e.target.value)}
+                      maxLength={200}
+                      placeholder="Observaciones sobre la receta médica"
+                      rows={2}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -616,6 +771,78 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                             placeholder="Observación para este producto"
                             className="w-full rounded border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                           />
+                        </div>
+                      )}
+
+                      {/* Campos de receta médica individual (solo para salida con "Entrega de receta") */}
+                      {movementType === "salida" && item.quantity > 0 && (item.reason === "Entrega de receta") && (
+                        <div className="border-t border-slate-200 pt-3 space-y-2 bg-emerald-50 -m-3.5 p-3.5 rounded">
+                          <p className="text-xs font-semibold text-emerald-900">📋 Datos de Receta (Individual)</p>
+
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
+                              Fecha de receta
+                            </label>
+                            <input
+                              type="date"
+                              value={item.recipeDate || ""}
+                              onChange={(e) => updateItemRecipeDate(item.product.id, e.target.value)}
+                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
+                              Nombre del paciente
+                            </label>
+                            <input
+                              type="text"
+                              value={item.patientName || ""}
+                              onChange={(e) => updateItemPatientName(item.product.id, e.target.value)}
+                              placeholder="Nombre completo del paciente"
+                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
+                              Prescrito por (Médico)
+                            </label>
+                            <input
+                              type="text"
+                              value={item.prescribedBy || ""}
+                              onChange={(e) => updateItemPrescribedBy(item.product.id, e.target.value)}
+                              placeholder="Dr(a). Nombre del médico"
+                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
+                              Código CIE
+                            </label>
+                            <input
+                              type="text"
+                              value={item.cieCode || ""}
+                              onChange={(e) => updateItemCieCode(item.product.id, e.target.value)}
+                              placeholder="Código CIE-10"
+                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
+                              Notas de receta
+                            </label>
+                            <textarea
+                              value={item.recipeNotes || ""}
+                              onChange={(e) => updateItemRecipeNotes(item.product.id, e.target.value)}
+                              maxLength={150}
+                              placeholder="Observaciones sobre la receta"
+                              rows={2}
+                              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
                         </div>
                       )}
 
