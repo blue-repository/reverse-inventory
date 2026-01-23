@@ -65,6 +65,7 @@ type BulkMovementItem = {
   quantity: number;
   reason: string;
   notes: string;
+   useIndividualReason: boolean;
   // Para entradas (lote)
   batchNumber?: string;
   issueDate?: string;
@@ -75,6 +76,7 @@ type BulkMovementItem = {
   locationNotes?: string;
   // Campos de receta médica (solo para salidas con "Entrega de receta")
   recipeDate?: string; // Disponible para todos los movimientos
+  recipeCode?: string;
   patientName?: string;
   prescribedBy?: string;
   cieCode?: string;
@@ -102,7 +104,8 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   const [isSearching, setIsSearching] = useState(false);
   const [generalReason, setGeneralReason] = useState<string>("");
   const [generalNotes, setGeneralNotes] = useState<string>("");
-  const [generalRecipeDate, setGeneralRecipeDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [generalRecipeCode, setGeneralRecipeCode] = useState<string>("");
+  const [generalRecipeDate, setGeneralRecipeDate] = useState<string>("");
   const [generalPatientName, setGeneralPatientName] = useState<string>("");
   const [generalPrescribedBy, setGeneralPrescribedBy] = useState<string>("");
   const [generalCieCode, setGeneralCieCode] = useState<string>("");
@@ -131,18 +134,39 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
         (p.barcode && containsNormalized(p.barcode, searchQuery)))
   );
 
-  // Calcular posición del dropdown
+  // Calcular posición del dropdown (responde a scroll/resize)
   useEffect(() => {
-    if (searchInputRef.current && searchQuery) {
+    const updateDropdownPosition = () => {
+      if (!searchInputRef.current || !searchQuery) {
+        setDropdownPosition(null);
+        return;
+      }
+
       const rect = searchInputRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const dropdownEstimatedHeight = 260; // px aprox
+      const spaceBelow = viewportHeight - rect.bottom;
+      const spaceAbove = rect.top;
+
+      const placeAbove = spaceBelow < 180 && spaceAbove > spaceBelow;
+      const top = placeAbove
+        ? Math.max(8, rect.top - dropdownEstimatedHeight - 6)
+        : rect.bottom + 6;
+
       setDropdownPosition({
-        top: rect.top - 10, // Posicionar encima del input
+        top,
         left: rect.left,
-        width: Math.max(rect.width, 384) // Mínimo 384px (24rem)
+        width: Math.max(rect.width, 320), // mínimo 320px para mobile
       });
-    } else {
-      setDropdownPosition(null);
-    }
+    };
+
+    updateDropdownPosition();
+    window.addEventListener("scroll", updateDropdownPosition, true);
+    window.addEventListener("resize", updateDropdownPosition);
+    return () => {
+      window.removeEventListener("scroll", updateDropdownPosition, true);
+      window.removeEventListener("resize", updateDropdownPosition);
+    };
   }, [searchQuery, isSearching]);
 
   // Búsqueda remota cuando se escribe en el buscador
@@ -213,6 +237,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           quantity: 0,
           reason: "",
           notes: "",
+           useIndividualReason: false,
           batchNumber: "",
           issueDate: new Date().toISOString().split("T")[0],
           expirationDate: "",
@@ -220,7 +245,8 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           drawer: "",
           section: "",
           locationNotes: "",
-          recipeDate: new Date().toISOString().split("T")[0],
+          recipeDate: "",
+          recipeCode: "",
           patientName: "",
           prescribedBy: "",
           cieCode: "",
@@ -240,6 +266,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
         quantity: 0,
         reason: "",
         notes: "",
+        useIndividualReason: false,
         batchNumber: "",
         issueDate: new Date().toISOString().split("T")[0],
         expirationDate: "",
@@ -247,7 +274,8 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
         drawer: "",
         section: "",
         locationNotes: "",
-        recipeDate: new Date().toISOString().split("T")[0],
+        recipeDate: "",
+        recipeCode: "",
         patientName: "",
         prescribedBy: "",
         cieCode: "",
@@ -282,6 +310,26 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     setItems((prev) =>
       prev.map((item) =>
         item.product.id === productId ? { ...item, reason } : item
+      )
+    );
+  };
+
+   // Alternar uso de motivo individual
+   const toggleIndividualReason = (productId: string) => {
+     setItems((prev) =>
+       prev.map((item) =>
+         item.product.id === productId 
+           ? { ...item, useIndividualReason: !item.useIndividualReason, reason: !item.useIndividualReason ? item.reason : "" } 
+           : item
+       )
+     );
+   };
+
+  // Actualizar código de receta
+  const updateItemRecipeCode = (productId: string, recipeCode: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, recipeCode } : item
       )
     );
   };
@@ -388,19 +436,33 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
       }
     }
 
+    // Motivo requerido cuando se habilita motivo individual
+    const missingIndividualReasons = items.some(
+      (item) => item.quantity > 0 && item.useIndividualReason && !(item.reason && item.reason.trim())
+    );
+    if (missingIndividualReasons) {
+      setError("Debes seleccionar un motivo para cada producto con motivo individual habilitado");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       // Generar UUIDs
       const movementGroupId = crypto.randomUUID();
-      const prescriptionGroupId = crypto.randomUUID();
+      const generalPrescriptionGroupId = crypto.randomUUID();
       const movementDate = new Date().toISOString();
 
       // Procesar cada movimiento
       const movements = items
         .filter((item) => item.quantity > 0)
         .map((item) => {
-          const itemReason = item.reason || generalReason || "Sin especificar";
+           const itemReason = (item.useIndividualReason && item.reason) ? item.reason : (generalReason || "Sin especificar");
           const isRecipeMovement = itemReason === "Entrega de receta";
+          // Si el producto tiene motivo individual "Entrega de receta", generar ID único
+           const hasIndividualReason = item.useIndividualReason && item.reason && item.reason.trim() !== "";
+          const prescriptionGroupId = isRecipeMovement && hasIndividualReason 
+            ? crypto.randomUUID() 
+            : generalPrescriptionGroupId;
           
           return {
             product_id: item.product.id,
@@ -423,7 +485,8 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
             location_notes: movementType === "entrada" ? item.locationNotes : undefined,
             // Campos de receta médica (solo para salidas con "Entrega de receta")
             prescription_group_id: isRecipeMovement ? prescriptionGroupId : undefined,
-            recipe_date: isRecipeMovement ? (item.recipeDate || generalRecipeDate || new Date().toISOString().split("T")[0]) : undefined,
+            recipe_code: isRecipeMovement ? (item.recipeCode || generalRecipeCode || undefined) : undefined,
+            recipe_date: isRecipeMovement ? (item.recipeDate || generalRecipeDate || undefined) : undefined,
             patient_name: isRecipeMovement ? (item.patientName || generalPatientName || "") : undefined,
             prescribed_by: isRecipeMovement ? (item.prescribedBy || generalPrescribedBy || "") : undefined,
             cie_code: isRecipeMovement ? (item.cieCode || generalCieCode || "") : undefined,
@@ -489,14 +552,14 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-0 sm:p-4 overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 p-0 sm:p-4 overflow-y-auto">
         <div
           ref={modalRef}
-          className="w-full max-w-7xl bg-white sm:rounded-2xl shadow-2xl flex flex-col min-h-screen sm:min-h-0 sm:my-4 sm:max-h-[calc(100vh-2rem)]"
+          className="w-full max-w-7xl bg-slate-100 sm:rounded-2xl shadow-2xl flex flex-col min-h-screen sm:min-h-0 sm:my-4 sm:max-h-[calc(100vh-2rem)]"
         >
         <form onSubmit={handleSubmit} className="flex flex-col h-full sm:h-auto">
           {/* Header fijo */}
-          <div className="flex-shrink-0 border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-4 bg-white sticky top-0 z-10 sm:static">
+          <div className="flex-shrink-0 border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-4 bg-gray-100 sticky top-0 z-10 sm:static">
             <h2 className="text-base sm:text-lg font-bold text-slate-900">Movimiento de Inventario</h2>
             <p className="text-xs sm:text-sm text-slate-600 mt-0.5">Gestiona múltiples productos</p>
           </div>
@@ -624,6 +687,14 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
               <CollapsibleSection title="Receta General" icon="💊" defaultOpen={false}>
                 <div className="space-y-2">
                   <input
+                    type="text"
+                    value={generalRecipeCode}
+                    onChange={(e) => setGeneralRecipeCode(e.target.value)}
+                    placeholder="Código de receta"
+                    maxLength={50}
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                  />
+                  <input
                     type="date"
                     value={generalRecipeDate}
                     onChange={(e) => setGeneralRecipeDate(e.target.value)}
@@ -679,6 +750,9 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                       : item.quantity > item.product.stock
                       ? `Cant. > Stock`
                       : null;
+                   const itemReason = item.useIndividualReason && item.reason ? item.reason : (generalReason || "");
+                   const showRecipeFields = movementType === "salida" && item.useIndividualReason && item.reason === "Entrega de receta";
+                   const hasIndividualRecipe = item.useIndividualReason && item.reason === "Entrega de receta";
                   
                   return (
                   <div
@@ -692,6 +766,22 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                       <span className="font-medium">{item.product.name}</span>
                       <span className="text-slate-600">Stock: {item.product.stock}</span>
                       {hasWarning && <span className="text-red-600">⚠️</span>}
+                      {hasIndividualRecipe && (
+                        <span className="text-purple-600 font-semibold" title="Este producto generará una receta médica separada">📋</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => toggleIndividualReason(item.product.id)}
+                        className={`ml-auto inline-flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-semibold transition-colors ${
+                          item.useIndividualReason
+                            ? "border-purple-500 text-purple-700 bg-purple-50 hover:bg-purple-100"
+                            : "border-slate-300 text-slate-600 bg-white hover:bg-slate-50"
+                        }`}
+                        title="Habilita un motivo específico para este producto"
+                      >
+                        <span className="text-[12px]">✏️</span>
+                        <span>{item.useIndividualReason ? "Motivo general" : "Motivo individual"}</span>
+                      </button>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-2">
@@ -704,16 +794,80 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                         className="rounded border px-2 py-1 text-xs"
                       />
                       <select
-                        value={item.reason}
+                        value={item.useIndividualReason ? item.reason : ""}
                         onChange={(e) => updateItemReason(item.product.id, e.target.value)}
-                        className="rounded border px-2 py-1 text-xs"
+                        disabled={!item.useIndividualReason}
+                        required={item.useIndividualReason}
+                        className={`rounded border px-2 py-1 text-xs ${
+                          !item.useIndividualReason ? "bg-slate-100 text-slate-400 cursor-not-allowed" : ""
+                        }`}
+                        title={item.useIndividualReason ? "Selecciona motivo para este producto" : "Usará motivo general"}
                       >
-                        <option value="">Motivo</option>
+                        <option value="">{item.useIndividualReason ? "Motivo" : "General"}</option>
                         {MOVEMENT_REASONS[movementType].map((r) => (
                           <option key={r} value={r}>{r}</option>
                         ))}
                       </select>
                     </div>
+
+                    {/* Campos de receta médica individual */}
+                    {showRecipeFields && (
+                      <div className="border-t border-slate-200 pt-2 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-semibold text-slate-600 uppercase">Datos de Receta</p>
+                          {hasIndividualRecipe && (
+                            <p className="text-[9px] text-purple-600 font-medium">⚠️ Receta separada</p>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          value={item.recipeCode}
+                          onChange={(e) => updateItemRecipeCode(item.product.id, e.target.value)}
+                          placeholder="Código de receta"
+                          maxLength={50}
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="date"
+                            value={item.recipeDate}
+                            onChange={(e) => updateItemRecipeDate(item.product.id, e.target.value)}
+                            placeholder="Fecha receta"
+                            className="rounded border border-slate-300 px-2 py-1 text-xs"
+                          />
+                          <input
+                            type="text"
+                            value={item.patientName}
+                            onChange={(e) => updateItemPatientName(item.product.id, e.target.value)}
+                            placeholder="Paciente"
+                            className="rounded border border-slate-300 px-2 py-1 text-xs"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={item.prescribedBy}
+                            onChange={(e) => updateItemPrescribedBy(item.product.id, e.target.value)}
+                            placeholder="Médico"
+                            className="rounded border border-slate-300 px-2 py-1 text-xs"
+                          />
+                          <input
+                            type="text"
+                            value={item.cieCode}
+                            onChange={(e) => updateItemCieCode(item.product.id, e.target.value)}
+                            placeholder="Código CIE"
+                            className="rounded border border-slate-300 px-2 py-1 text-xs"
+                          />
+                        </div>
+                        <textarea
+                          value={item.recipeNotes}
+                          onChange={(e) => updateItemRecipeNotes(item.product.id, e.target.value)}
+                          placeholder="Notas de receta"
+                          rows={2}
+                          className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                        />
+                      </div>
+                    )}
                     
                     <button
                       type="button"
@@ -733,7 +887,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           </div>
 
           {/* Footer SIEMPRE VISIBLE */}
-          <div className="flex-shrink-0 border-t border-slate-200 px-4 sm:px-6 py-3 bg-white sticky bottom-0 z-10 sm:static">
+          <div className="flex-shrink-0 border-t border-slate-200 px-4 sm:px-6 py-3 bg-slate-100 sticky bottom-0 z-10 sm:static">
             <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 items-stretch sm:items-center justify-between">
               <button
                 type="button"
@@ -779,7 +933,6 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                 top: `${dropdownPosition.top}px`,
                 left: `${dropdownPosition.left}px`,
                 width: `${dropdownPosition.width}px`,
-                transform: 'translateY(-100%)',
                 zIndex: 9999
               }}
               className="bg-white border border-slate-300 rounded-lg shadow-2xl max-h-64 overflow-y-auto"
@@ -816,7 +969,6 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                 top: `${dropdownPosition.top}px`,
                 left: `${dropdownPosition.left}px`,
                 width: `${dropdownPosition.width}px`,
-                transform: 'translateY(-100%)',
                 zIndex: 9999
               }}
               className="bg-white border border-slate-300 rounded-lg shadow-2xl p-3"
@@ -835,7 +987,6 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                 top: `${dropdownPosition.top}px`,
                 left: `${dropdownPosition.left}px`,
                 width: `${dropdownPosition.width}px`,
-                transform: 'translateY(-100%)',
                 zIndex: 9999
               }}
               className="bg-white border border-slate-300 rounded-lg shadow-2xl p-3"
