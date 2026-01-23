@@ -25,11 +25,11 @@ function CollapsibleSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
   
   return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+    <div className="border border-gray-300 rounded-lg overflow-hidden bg-gray-50">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-300 hover:bg-gray-400 transition-colors"
       >
         <span className="text-xs sm:text-sm font-semibold text-slate-700 flex items-center gap-2">
           <span>{icon}</span>
@@ -104,6 +104,15 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   const [isSearching, setIsSearching] = useState(false);
   const [generalReason, setGeneralReason] = useState<string>("");
   const [generalNotes, setGeneralNotes] = useState<string>("");
+  // Campos generales para lotes (entrada)
+  const [generalBatchNumber, setGeneralBatchNumber] = useState<string>("");
+  const [generalIssueDate, setGeneralIssueDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [generalExpirationDate, setGeneralExpirationDate] = useState<string>("");
+  const [generalShelf, setGeneralShelf] = useState<string>("");
+  const [generalDrawer, setGeneralDrawer] = useState<string>("");
+  const [generalSection, setGeneralSection] = useState<string>("");
+  const [generalLocationNotes, setGeneralLocationNotes] = useState<string>("");
+  // Campos generales para receta (salida)
   const [generalRecipeCode, setGeneralRecipeCode] = useState<string>("");
   const [generalRecipeDate, setGeneralRecipeDate] = useState<string>("");
   const [generalPatientName, setGeneralPatientName] = useState<string>("");
@@ -343,7 +352,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     );
   };
 
-  // Generar batch number
+  // Generar batch number para producto individual
   const generateBatchNumber = (productId: string) => {
     const today = new Date();
     const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
@@ -357,6 +366,17 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
         item.product.id === productId ? { ...item, batchNumber } : item
       )
     );
+  };
+
+  // Generar batch number general
+  const generateGeneralBatchNumber = () => {
+    const today = new Date();
+    const dateStr = today.toISOString().split("T")[0].replace(/-/g, "");
+    const random = Math.floor(Math.random() * 1000)
+      .toString()
+      .padStart(3, "0");
+    const batchNumber = `LOTE-${dateStr}-${random}`;
+    setGeneralBatchNumber(batchNumber);
   };
 
   // Actualizar campos de receta
@@ -400,6 +420,63 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     );
   };
 
+  // Actualizar campos de lote para items individuales
+  const updateItemBatchNumber = (productId: string, batchNumber: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, batchNumber } : item
+      )
+    );
+  };
+
+  const updateItemExpirationDate = (productId: string, expirationDate: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, expirationDate } : item
+      )
+    );
+  };
+
+  const updateItemIssueDate = (productId: string, issueDate: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, issueDate } : item
+      )
+    );
+  };
+
+  const updateItemShelf = (productId: string, shelf: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, shelf } : item
+      )
+    );
+  };
+
+  const updateItemDrawer = (productId: string, drawer: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, drawer } : item
+      )
+    );
+  };
+
+  const updateItemSection = (productId: string, section: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, section } : item
+      )
+    );
+  };
+
+  const updateItemLocationNotes = (productId: string, locationNotes: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, locationNotes } : item
+      )
+    );
+  };
+
   // Guardar movimientos
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -425,9 +502,17 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
 
     // Para entradas, validar que tengan datos de lote
     if (movementType === "entrada") {
-      const invalidEntries = items.filter(
-        (item) => item.quantity > 0 && (!item.expirationDate || !item.batchNumber)
-      );
+      const invalidEntries = items.filter((item) => {
+        if (item.quantity === 0) return false;
+        
+        // Determinar qué valores usar: individuales o generales
+        const batchNumber = item.batchNumber || generalBatchNumber;
+        const expirationDate = item.expirationDate || generalExpirationDate;
+        
+        // Validar que ambos tengan valor
+        return !batchNumber || !expirationDate;
+      });
+      
       if (invalidEntries.length > 0) {
         setError(
           "Todos los ingresos deben tener número de lote y fecha de vencimiento"
@@ -475,14 +560,14 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
             movement_group_id: movementGroupId,
             movement_date: movementDate,
             is_recipe_movement: isRecipeMovement,
-            // Datos de lote para entradas
-            batch_number: movementType === "entrada" ? item.batchNumber : undefined,
-            issue_date: movementType === "entrada" ? item.issueDate : undefined,
-            expiration_date: movementType === "entrada" ? item.expirationDate : undefined,
-            shelf: movementType === "entrada" ? item.shelf : undefined,
-            drawer: movementType === "entrada" ? item.drawer : undefined,
-            section: movementType === "entrada" ? item.section : undefined,
-            location_notes: movementType === "entrada" ? item.locationNotes : undefined,
+            // Datos de lote para entradas (usa valores individuales o generales como fallback)
+            batch_number: movementType === "entrada" ? (item.batchNumber || generalBatchNumber || undefined) : undefined,
+            issue_date: movementType === "entrada" ? (item.issueDate || generalIssueDate || undefined) : undefined,
+            expiration_date: movementType === "entrada" ? (item.expirationDate || generalExpirationDate || undefined) : undefined,
+            shelf: movementType === "entrada" ? (item.shelf || generalShelf || undefined) : undefined,
+            drawer: movementType === "entrada" ? (item.drawer || generalDrawer || undefined) : undefined,
+            section: movementType === "entrada" ? (item.section || generalSection || undefined) : undefined,
+            location_notes: movementType === "entrada" ? (item.locationNotes || generalLocationNotes || undefined) : undefined,
             // Campos de receta médica (solo para salidas con "Entrega de receta")
             prescription_group_id: isRecipeMovement ? prescriptionGroupId : undefined,
             recipe_code: isRecipeMovement ? (item.recipeCode || generalRecipeCode || undefined) : undefined,
@@ -555,9 +640,9 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
       <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 p-0 sm:p-4 overflow-y-auto">
         <div
           ref={modalRef}
-          className="w-full max-w-7xl bg-slate-100 sm:rounded-2xl shadow-2xl flex flex-col min-h-screen sm:min-h-0 sm:my-4 sm:max-h-[calc(100vh-2rem)]"
+          className="w-full max-w-7xl bg-slate-100 sm:rounded-2xl shadow-2xl flex flex-col h-[95vh] sm:h-[90vh] max-h-[95vh] sm:max-h-[90vh] overflow-hidden sm:my-4"
         >
-        <form onSubmit={handleSubmit} className="flex flex-col h-full sm:h-auto">
+        <form onSubmit={handleSubmit} className="flex flex-col h-full">
           {/* Header fijo */}
           <div className="flex-shrink-0 border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-4 bg-gray-100 sticky top-0 z-10 sm:static">
             <h2 className="text-base sm:text-lg font-bold text-slate-900">Movimiento de Inventario</h2>
@@ -571,11 +656,11 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           )}
 
           {/* Contenido scrollable */}
-          <div className="flex-1 overflow-y-auto bg-slate-50 px-4 sm:px-6 py-4">
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <div className="flex-1 overflow-hidden bg-slate-50 px-4 sm:px-6 py-4">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
           
           {/* COLUMNA IZQUIERDA - CONFIGURACIÓN */}
-          <div className="lg:col-span-1 space-y-3">
+          <div className="lg:col-span-1 space-y-3 overflow-y-auto pr-1 max-h-full">
             <CollapsibleSection title="Configuración" icon="⚙️" defaultOpen={true}>
               <div className="space-y-3">
                 {/* Tipo de movimiento */}
@@ -682,6 +767,117 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
               </div>
             </CollapsibleSection>
 
+            {/* Información del Lote General - Para ENTRADA */}
+            {movementType === "entrada" && (
+              <CollapsibleSection title="Información del Lote (General)" icon="📦" defaultOpen={false}>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Número de Lote (Usar como predeterminado)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={generalBatchNumber}
+                        onChange={(e) => setGeneralBatchNumber(e.target.value)}
+                        placeholder="Generar o ingresar..."
+                        className="flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={generateGeneralBatchNumber}
+                        className="rounded-lg bg-blue-600 p-1.5 text-white hover:bg-blue-700 transition-colors"
+                        title="Generar número de lote aleatorio"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Fecha de Expedición
+                      </label>
+                      <input
+                        type="date"
+                        value={generalIssueDate}
+                        onChange={(e) => setGeneralIssueDate(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Fecha de Vencimiento (Usar como predeterminada)
+                      </label>
+                      <input
+                        type="date"
+                        value={generalExpirationDate}
+                        onChange={(e) => setGeneralExpirationDate(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Ubicación del Lote General - Para ENTRADA */}
+            {movementType === "entrada" && (
+              <CollapsibleSection title="Ubicación del Lote (General)" icon="📍" defaultOpen={false}>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Estantería</label>
+                      <input
+                        type="text"
+                        value={generalShelf}
+                        onChange={(e) => setGeneralShelf(e.target.value)}
+                        placeholder="A, B, C..."
+                        className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Cajón/Nivel</label>
+                      <input
+                        type="text"
+                        value={generalDrawer}
+                        onChange={(e) => setGeneralDrawer(e.target.value)}
+                        placeholder="1, 2, 3..."
+                        className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">Sección</label>
+                      <input
+                        type="text"
+                        value={generalSection}
+                        onChange={(e) => setGeneralSection(e.target.value)}
+                        placeholder="Izq, Der, Cen..."
+                        className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Notas de Ubicación
+                    </label>
+                    <textarea
+                      value={generalLocationNotes}
+                      onChange={(e) => setGeneralLocationNotes(e.target.value)}
+                      placeholder="Ubicación específica o referencias..."
+                      rows={2}
+                      className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
             {/* Receta médica general */}
             {movementType === "salida" && generalReason === "Entrega de receta" && (
               <CollapsibleSection title="Receta General" icon="💊" defaultOpen={false}>
@@ -728,14 +924,14 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           </div>
 
           {/* COLUMNA DERECHA - PRODUCTOS */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-3 overflow-y-auto pr-1 max-h-full">
             <CollapsibleSection 
               title="Productos seleccionados" 
               icon="📦" 
               defaultOpen={true}
               badge={items.length > 0 ? `${items.length}` : undefined}
             >
-              <div className="space-y-2.5 max-h-[50vh] overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-full overflow-y-auto pr-1">
 
               {items.length === 0 ? (
                 <div className="rounded-lg border-2 border-dashed border-slate-300 px-4 py-6 text-center">
@@ -758,7 +954,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                   <div
                     key={item.product.id}
                     className={`rounded-lg border p-2.5 space-y-2 ${
-                      hasWarning ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"
+                      hasWarning ? "border-red-300 bg-red-50" : "border-slate-200 bg-slate-50"
                     }`}
                   >
                     {/* Campos simplificados */}
@@ -866,6 +1062,101 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                           rows={2}
                           className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
                         />
+                      </div>
+                    )}
+
+                    {/* Campos de lote individual para ENTRADA */}
+                    {movementType === "entrada" && item.useIndividualReason && (
+                      <div className="border-t border-slate-200 pt-2 space-y-2">
+                        <p className="text-[10px] font-semibold text-slate-600 uppercase">Datos de Lote Individual</p>
+                        
+                        <div className="flex gap-2 items-end">
+                          <div className="flex-1">
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Número de Lote</label>
+                            <input
+                              type="text"
+                              value={item.batchNumber || ""}
+                              onChange={(e) => updateItemBatchNumber(item.product.id, e.target.value)}
+                              placeholder="O usar general"
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => generateBatchNumber(item.product.id)}
+                            className="rounded bg-blue-600 p-1.5 text-white hover:bg-blue-700 transition-colors"
+                            title="Generar número de lote aleatorio"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Fecha Expedición</label>
+                            <input
+                              type="date"
+                              value={item.issueDate || generalIssueDate}
+                              onChange={(e) => updateItemIssueDate(item.product.id, e.target.value)}
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Fecha Vencimiento</label>
+                            <input
+                              type="date"
+                              value={item.expirationDate || generalExpirationDate}
+                              onChange={(e) => updateItemExpirationDate(item.product.id, e.target.value)}
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Estantería</label>
+                            <input
+                              type="text"
+                              value={item.shelf || ""}
+                              onChange={(e) => updateItemShelf(item.product.id, e.target.value)}
+                              placeholder="A, B..."
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Cajón/Nivel</label>
+                            <input
+                              type="text"
+                              value={item.drawer || ""}
+                              onChange={(e) => updateItemDrawer(item.product.id, e.target.value)}
+                              placeholder="1, 2..."
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Sección</label>
+                            <input
+                              type="text"
+                              value={item.section || ""}
+                              onChange={(e) => updateItemSection(item.product.id, e.target.value)}
+                              placeholder="Izq..."
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Notas Ubicación</label>
+                          <textarea
+                            value={item.locationNotes || ""}
+                            onChange={(e) => updateItemLocationNotes(item.product.id, e.target.value)}
+                            placeholder="Referencias específicas"
+                            rows={1}
+                            className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                          />
+                        </div>
                       </div>
                     )}
                     
