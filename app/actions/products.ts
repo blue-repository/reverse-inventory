@@ -343,6 +343,11 @@ export async function recordBulkInventoryMovements(
     reason?: string;
     notes?: string;
     user_id: string;
+    // Campos automáticos
+    movement_group_id?: string;
+    movement_date?: string;
+    is_recipe_movement?: boolean;
+    // Datos de lote para entradas
     batch_number?: string;
     issue_date?: string;
     expiration_date?: string;
@@ -350,6 +355,14 @@ export async function recordBulkInventoryMovements(
     drawer?: string;
     section?: string;
     location_notes?: string;
+    // Campos de receta médica
+    prescription_group_id?: string;
+    recipe_code?: string;
+    recipe_date?: string;
+    patient_name?: string;
+    prescribed_by?: string;
+    cie_code?: string;
+    recipe_notes?: string;
   }>
 ) {
   try {
@@ -402,6 +415,18 @@ export async function recordBulkInventoryMovements(
         reason: movement.reason || null,
         notes: movement.notes || null,
         recorded_by: movement.user_id || "Sistema",
+        // Campos automáticos
+        movement_group_id: movement.movement_group_id || null,
+        movement_date: movement.movement_date || null,
+        is_recipe_movement: movement.is_recipe_movement || false,
+        // Campos de receta médica
+        prescription_group_id: movement.prescription_group_id || null,
+        recipe_code: movement.recipe_code || null,
+        recipe_date: movement.recipe_date || null,
+        patient_name: movement.patient_name || null,
+        prescribed_by: movement.prescribed_by || null,
+        cie_code: movement.cie_code || null,
+        recipe_notes: movement.recipe_notes || null,
       });
 
       // Si es entrada y tienen datos de lote, crear el batch
@@ -447,6 +472,16 @@ export async function recordBulkInventoryMovements(
           reason: string | null;
           notes: string | null;
           recorded_by: string;
+          movement_group_id: string | null;
+          movement_date: string | null;
+          is_recipe_movement: boolean;
+          prescription_group_id: string | null;
+          recipe_code: string | null;
+          recipe_date: string | null;
+          patient_name: string | null;
+          prescribed_by: string | null;
+          cie_code: string | null;
+          recipe_notes: string | null;
         }>
       );
 

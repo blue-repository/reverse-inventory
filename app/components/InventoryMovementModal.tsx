@@ -17,6 +17,51 @@ const MOVEMENT_REASONS: Record<MovementType, string[]> = {
   ajuste: ["Corrección de inventario", "Ajuste administrativo", "Otro"],
 };
 
+// Componente para secciones colapsables
+function CollapsibleSection({ 
+  title, 
+  children, 
+  defaultOpen = false,
+  icon = "📋"
+}: { 
+  title: string; 
+  children: React.ReactNode; 
+  defaultOpen?: boolean;
+  icon?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors"
+      >
+        <span className="text-xs sm:text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <span>{icon}</span>
+          {title}
+        </span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={2}
+          stroke="currentColor"
+          className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div className="p-3 bg-white">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function InventoryMovementModal({
   product,
   onClose,
@@ -178,142 +223,144 @@ export default function InventoryMovementModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/70 overflow-y-auto flex items-center justify-center p-2 sm:p-4"
+      className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-2 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl my-2 sm:my-4 max-h-[95vh] overflow-y-auto flex flex-col"
+        className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl my-2 flex flex-col max-h-[90vh] sm:max-h-[95vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          onClick={onClose}
-          className="absolute right-2 top-2 z-10 rounded-full bg-slate-900 p-1.5 sm:p-2 text-white hover:bg-slate-700 transition-colors"
-          aria-label="Cerrar"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-            className="h-4 w-4 sm:h-5 sm:w-5"
+        {/* Header fijo */}
+        <div className="flex-shrink-0 border-b border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3">
+          <button
+            onClick={onClose}
+            className="absolute right-2 top-2 z-10 rounded-full bg-slate-900 p-1.5 sm:p-2 text-white hover:bg-slate-700 transition-colors"
+            aria-label="Cerrar"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-
-        <div className="border-b border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+              className="h-4 w-4 sm:h-5 sm:w-5"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
           <h2 className="text-base sm:text-lg font-bold text-slate-900">
             Registrar Movimiento
           </h2>
           <p className="mt-0.5 text-xs sm:text-sm text-slate-600">{product.name}</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col p-3 sm:p-4 space-y-2.5 sm:space-y-3">
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs sm:text-sm text-red-800">
-              {error}
+        {/* Contenido scrollable */}
+        <div className="flex-1 overflow-y-auto">
+          <form id="movement-form" onSubmit={handleSubmit} className="flex flex-col p-3 sm:p-4 space-y-2.5 sm:space-y-3">
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs sm:text-sm text-red-800">
+                {error}
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+              {(["entrada", "salida", "ajuste"] as MovementType[]).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => {
+                    setMovementType(type);
+                    setReason("");
+                  }}
+                  className={`rounded-lg border-2 px-2 py-1.5 sm:py-2 text-xs font-semibold transition-all ${
+                    movementType === type
+                      ? getTypeColor(type) + " border-current"
+                      : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {type === "entrada"
+                    ? "📥 Entrada"
+                    : type === "salida"
+                      ? "📤 Salida"
+                      : "⚙️ Ajuste"}
+                </button>
+              ))}
             </div>
-          )}
 
-          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-            {(["entrada", "salida", "ajuste"] as MovementType[]).map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => {
-                  setMovementType(type);
-                  setReason("");
-                }}
-                className={`rounded-lg border-2 px-2 py-1.5 sm:py-2 text-xs font-semibold transition-all ${
-                  movementType === type
-                    ? getTypeColor(type) + " border-current"
-                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                {type === "entrada"
-                  ? "📥 Entrada"
-                  : type === "salida"
-                    ? "📤 Salida"
-                    : "⚙️ Ajuste"}
-              </button>
-            ))}
-          </div>
+            <div>
+              <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                Cantidad <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                placeholder="Ej: 10"
+                className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                required
+              />
+            </div>
 
-          <div>
-            <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-              Cantidad <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              placeholder="Ej: 10"
-              className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-              required
-            />
-          </div>
-
-          {/* Campos específicos para ENTRADA (Lote) */}
-          {movementType === "entrada" && (
-            <>
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 sm:p-3">
-                <p className="text-xs font-semibold text-emerald-900 mb-2">Datos del Lote</p>
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                      Número de Lote
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={batchNumber}
-                        onChange={(e) => setBatchNumber(e.target.value)}
-                        placeholder="Generar o ingresar..."
-                        className="flex-1 rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={generateBatchNumber}
-                        className="rounded-lg bg-blue-600 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white hover:bg-blue-700 transition-colors whitespace-nowrap"
-                        title="Generar número de lote automático"
-                      >
-                        Generar
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+            {/* Campos específicos para ENTRADA (Lote) */}
+            {movementType === "entrada" && (
+              <>
+                <CollapsibleSection title="Información del Lote" icon="📦" defaultOpen={true}>
+                  <div className="space-y-3">
                     <div>
                       <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                        Fecha de Expedición
+                        Número de Lote <span className="text-red-500">*</span>
                       </label>
-                      <input
-                        type="date"
-                        value={issueDate}
-                        onChange={(e) => setIssueDate(e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={batchNumber}
+                          onChange={(e) => setBatchNumber(e.target.value)}
+                          placeholder="Generar o ingresar..."
+                          className="flex-1 rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={generateBatchNumber}
+                          className="rounded-lg bg-blue-600 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white hover:bg-blue-700 transition-colors whitespace-nowrap"
+                          title="Generar número de lote automático"
+                        >
+                          Generar
+                        </button>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                        Fecha de Vencimiento <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="date"
-                        value={expirationDate}
-                        onChange={(e) => setExpirationDate(e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                        required
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                          Fecha de Expedición
+                        </label>
+                        <input
+                          type="date"
+                          value={issueDate}
+                          onChange={(e) => setIssueDate(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                          Fecha de Vencimiento <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={expirationDate}
+                          onChange={(e) => setExpirationDate(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                          required
+                        />
+                      </div>
                     </div>
                   </div>
+                </CollapsibleSection>
 
-                  <div className="pt-2 border-t border-emerald-200">
-                    <p className="text-xs font-semibold text-slate-700 mb-2">Ubicación del Lote</p>
+                <CollapsibleSection title="Ubicación del Lote" icon="📍" defaultOpen={false}>
+                  <div className="space-y-3">
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="mb-1 block text-[11px] text-slate-600">Estantería</label>
@@ -347,7 +394,7 @@ export default function InventoryMovementModal({
                       </div>
                     </div>
 
-                    <div className="mt-2">
+                    <div>
                       <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
                         Notas de Ubicación
                       </label>
@@ -360,132 +407,134 @@ export default function InventoryMovementModal({
                       />
                     </div>
                   </div>
+                </CollapsibleSection>
+
+                <div>
+                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                    Motivo <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                    required
+                  >
+                    <option value="">Seleccionar motivo...</option>
+                    {reasons.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </div>
 
-              <div>
-                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                  Motivo <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  required
-                >
-                  <option value="">Seleccionar motivo...</option>
-                  {reasons.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div>
+                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                    Notas (Opcional)
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Observaciones adicionales..."
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                  />
+                </div>
+              </>
+            )}
 
-              <div>
-                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                  Notas (Opcional)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Observaciones adicionales..."
-                  rows={2}
-                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                />
-              </div>
-            </>
-          )}
+            {/* Para SALIDA y AJUSTE */}
+            {movementType !== "entrada" && (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                    Motivo <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                    required
+                  >
+                    <option value="">Seleccionar motivo...</option>
+                    {reasons.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-          {/* Para SALIDA y AJUSTE */}
-          {movementType !== "entrada" && (
-            <>
-              <div>
-                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                  Motivo <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                  required
-                >
-                  <option value="">Seleccionar motivo...</option>
-                  {reasons.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div>
+                  <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                    Notas (Opcional)
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Ej: Referencia de documento, observaciones..."
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                  />
+                </div>
+              </>
+            )}
 
-              <div>
-                <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
-                  Notas (Opcional)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Ej: Referencia de documento, observaciones..."
-                  rows={2}
-                  className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                />
-              </div>
-            </>
-          )}
-
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 sm:p-3">
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <p className="text-slate-600">Stock Inicial</p>
-                <p className="font-semibold text-slate-900">{product.stock_inicial} unidades</p>
-              </div>
-              <div>
-                <p className="text-slate-600">Stock Actual</p>
-                <p className="font-semibold text-slate-900">{product.stock} unidades</p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 sm:p-3">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <p className="text-slate-600">Stock Inicial</p>
+                  <p className="font-semibold text-slate-900">{product.stock_inicial} unidades</p>
+                </div>
+                <div>
+                  <p className="text-slate-600">Stock Actual</p>
+                  <p className="font-semibold text-slate-900">{product.stock} unidades</p>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Información sobre lotes para entradas y salidas */}
-          {(movementType === "entrada" || movementType === "salida") && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-2.5 sm:p-3 text-xs sm:text-sm">
-              {movementType === "entrada" ? (
-                <div>
-                  <p className="font-semibold text-blue-900 mb-2">📦 Crear nuevo lote</p>
-                  <p className="text-blue-700">Este ingreso creará un nuevo lote con los datos especificados arriba. El número de lote se generará automáticamente si lo dejas en blanco.</p>
-                </div>
-              ) : (
-                <div>
-                  <p className="font-semibold text-blue-900 mb-2">📤 Salida de inventario</p>
-                  <p className="text-blue-700">El sistema utilizará el método FEFO (First Expired, First Out). Se utilizarán primero los lotes que vencen antes.</p>
-                </div>
-              )}
-            </div>
-          )}
+            {/* Información sobre lotes para entradas y salidas */}
+            {(movementType === "entrada" || movementType === "salida") && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-2.5 sm:p-3 text-xs sm:text-sm">
+                {movementType === "entrada" ? (
+                  <div>
+                    <p className="font-semibold text-blue-900 mb-1">📦 Crear nuevo lote</p>
+                    <p className="text-blue-700">Este ingreso creará un nuevo lote con los datos especificados arriba.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="font-semibold text-blue-900 mb-1">📤 Salida de inventario</p>
+                    <p className="text-blue-700">El sistema utilizará el método FEFO (First Expired, First Out). Se utilizarán primero los lotes que vencen antes.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </form>
+        </div>
 
-          <div className="mt-auto border-t border-slate-200 pt-2.5 sm:pt-3 flex flex-col-reverse sm:flex-row gap-2 justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="w-full sm:w-auto rounded-lg border border-slate-300 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full sm:w-auto rounded-lg bg-slate-900 px-3 py-2 text-xs sm:text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-            >
-              {isSubmitting 
-                ? "Procesando..." 
-                : movementType === "entrada" 
-                  ? "Crear Lote" 
-                  : "Registrar Movimiento"}
-            </button>
-          </div>
-        </form>
+        {/* Footer fijo con botones */}
+        <div className="flex-shrink-0 border-t border-slate-200 bg-white px-3 sm:px-4 py-2.5 sm:py-3 flex flex-col-reverse sm:flex-row gap-2 justify-end rounded-b-xl">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="w-full sm:w-auto rounded-lg border border-slate-300 px-4 py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            form="movement-form"
+            disabled={isSubmitting}
+            className="w-full sm:w-auto rounded-lg bg-slate-900 px-4 py-2 text-xs sm:text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
+          >
+            {isSubmitting 
+              ? "Procesando..." 
+              : movementType === "entrada" 
+                ? "Crear Lote" 
+                : "Registrar Movimiento"}
+          </button>
+        </div>
       </div>
     </div>
   );
