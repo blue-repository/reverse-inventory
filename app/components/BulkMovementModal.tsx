@@ -7,6 +7,13 @@ import { recordBulkInventoryMovements, searchProducts } from "@/app/actions/prod
 import { useUser } from "@/app/context/UserContext";
 import { containsNormalized } from "@/app/lib/search-utils";
 import BarcodeScannerModal from "@/app/components/BarcodeScannerModal";
+import { WizardStepper } from "@/app/components/wizard/WizardStepper";
+import { WizardNavigation } from "@/app/components/wizard/WizardNavigation";
+import { WizardStep1 } from "@/app/components/wizard/WizardStep1";
+import { WizardStep2 } from "@/app/components/wizard/WizardStep2";
+import { WizardStep3 } from "@/app/components/wizard/WizardStep3";
+import { WizardStep4 } from "@/app/components/wizard/WizardStep4";
+import { WizardStep5 } from "@/app/components/wizard/WizardStep5";
 
 // Componente para secciones colapsables
 function CollapsibleSection({ 
@@ -122,14 +129,26 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   const [showScanner, setShowScanner] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
-  const modalRef = useRef<HTMLDivElement | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const dropdownRef = useRef<HTMLDivElement | null>(null);
-  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [mounted, setMounted] = useState(false);
   const [itemsWithWarning, setItemsWithWarning] = useState<Set<string>>(new Set());
+  const [mounted, setMounted] = useState(false);
+
+  // Estados del Wizard (mobile)
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [isMobile, setIsMobile] = useState(false);
+  const [stepErrors, setStepErrors] = useState<Record<number, string | null>>({
+    1: null,
+    2: null,
+    3: null,
+    4: null,
+    5: null,
+  });
+
+  // Refs y estados para dropdown
+  const modalRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -477,6 +496,15 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     );
   };
 
+  // Función genérica para actualizar datos de items
+  const updateItemData = (productId: string, data: Partial<BulkMovementItem>) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, ...data } : item
+      )
+    );
+  };
+
   // Guardar movimientos
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -590,8 +618,6 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     }
   };
 
-  const itemsWithQuantity = items.filter((item) => item.quantity > 0);
-
   // Detectar clics fuera del modal (solo si no hay scanner abierto)
   useEffect(() => {
     if (showScanner) return; // No cerrar si el scanner está abierto
@@ -635,14 +661,250 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     };
   }, [onClose, showScanner, searchQuery]);
 
+  const itemsWithQuantity = items.filter((item) => item.quantity > 0);
+
+  // Detectar clics fuera del modal (solo si no hay scanner abierto)
+  useEffect(() => {
+    if (showScanner) return;
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      
+      if (dropdownRef.current && !dropdownRef.current.contains(target) && searchQuery) {
+        setSearchQuery("");
+        return;
+      }
+      
+      if (
+        modalRef.current && 
+        !modalRef.current.contains(target) &&
+        (!dropdownRef.current || !dropdownRef.current.contains(target))
+      ) {
+        onClose();
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && searchQuery) {
+        setSearchQuery("");
+        return;
+      }
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, showScanner, searchQuery]);
+
+  // Detectar dispositivo móvil
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+
+    handleResize(); // Inicial check
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Validar paso del wizard
+  const validateStep = (step: number): boolean => {
+    setStepErrors(prev => ({ ...prev, [step]: null }));
+
+    switch (step) {
+      case 1:
+        return true;
+      
+      case 2:
+        return true;
+      
+      case 3:
+        if (movementType !== "entrada") return true;
+        const hasLoteData = generalBatchNumber && generalExpirationDate;
+        if (!hasLoteData) {
+          setStepErrors(prev => ({ ...prev, [step]: "Debes ingresar número de lote y fecha de vencimiento" }));
+          return false;
+        }
+        return true;
+      
+      case 4:
+        return true;
+      
+      case 5:
+        if (items.filter(i => i.quantity > 0).length === 0) {
+          setStepErrors(prev => ({ ...prev, [step]: "Agrega al menos un producto con cantidad" }));
+          return false;
+        }
+        return true;
+    }
+    return true;
+  };
+
+  // Navegación del wizard
+  const goToNextStep = () => {
+    if (validateStep(currentStep)) {
+      let nextStep = currentStep + 1;
+      while (nextStep <= 5) {
+        if (movementType !== "entrada" && (nextStep === 3 || nextStep === 4)) {
+          nextStep++;
+        } else {
+          break;
+        }
+      }
+      if (nextStep <= 5) {
+        setCurrentStep(nextStep as 1 | 2 | 3 | 4 | 5);
+      }
+    }
+  };
+
+  const goToPreviousStep = () => {
+    let prevStep = currentStep - 1;
+    while (prevStep >= 1) {
+      if (movementType !== "entrada" && (prevStep === 3 || prevStep === 4)) {
+        prevStep--;
+      } else {
+        break;
+      }
+    }
+    if (prevStep >= 1) {
+      setCurrentStep(prevStep as 1 | 2 | 3 | 4 | 5);
+    }
+  };
+
+  const getTotalSteps = (): number => {
+    if (movementType === "entrada") return 5;
+    return 3;
+  };
+
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 p-0 sm:p-4 overflow-y-auto">
-        <div
-          ref={modalRef}
-          className="w-full max-w-7xl bg-slate-100 sm:rounded-2xl shadow-2xl flex flex-col h-[95vh] sm:h-[90vh] max-h-[95vh] sm:max-h-[90vh] overflow-hidden sm:my-4"
-        >
-        <form onSubmit={handleSubmit} className="flex flex-col h-full">
+      {/* MOBILE WIZARD VIEW */}
+      {isMobile && (
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 p-0 sm:p-4 overflow-y-auto">
+          <div
+            ref={modalRef}
+            className="w-full max-w-7xl bg-slate-100 sm:rounded-2xl shadow-2xl flex flex-col h-[95vh] sm:h-[90vh] max-h-[95vh] sm:max-h-[90vh] overflow-hidden sm:my-4"
+          >
+            {/* Stepper Header */}
+            <WizardStepper 
+              currentStep={currentStep} 
+              totalSteps={getTotalSteps()}
+            />
+
+            {/* Contenido del paso actual */}
+            <form onSubmit={handleSubmit} className="flex flex-col h-full flex-1">
+              <div className="flex-1 overflow-y-auto bg-slate-50 flex flex-col">
+                {currentStep === 1 && (
+                  <WizardStep1
+                    movementType={movementType}
+                    onMovementTypeChange={(type) => {
+                      setMovementType(type);
+                      validateItemsForMovementType(type, items);
+                    }}
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    isSearching={isSearching}
+                    filteredProducts={filteredProducts}
+                    onAddProduct={addProduct}
+                    onShowScanner={() => setShowScanner(true)}
+                    itemIds={new Set(items.map(item => item.product.id))}
+                    items={items}
+                    onRemoveItem={removeItem}
+                  />
+                )}
+
+                {currentStep === 2 && (
+                  <WizardStep2
+                    movementType={movementType}
+                    generalReason={generalReason}
+                    onGeneralReasonChange={setGeneralReason}
+                    generalNotes={generalNotes}
+                    onGeneralNotesChange={setGeneralNotes}
+                    generalRecipeCode={generalRecipeCode}
+                    onGeneralRecipeCodeChange={setGeneralRecipeCode}
+                    generalRecipeDate={generalRecipeDate}
+                    onGeneralRecipeDateChange={setGeneralRecipeDate}
+                    generalPatientName={generalPatientName}
+                    onGeneralPatientNameChange={setGeneralPatientName}
+                    generalPrescribedBy={generalPrescribedBy}
+                    onGeneralPrescribedByChange={setGeneralPrescribedBy}
+                    generalCieCode={generalCieCode}
+                    onGeneralCieCodeChange={setGeneralCieCode}
+                    generalRecipeNotes={generalRecipeNotes}
+                    onGeneralRecipeNotesChange={setGeneralRecipeNotes}
+                  />
+                )}
+
+                {currentStep === 3 && movementType === "entrada" && (
+                  <WizardStep3
+                    generalBatchNumber={generalBatchNumber}
+                    onGeneralBatchNumberChange={setGeneralBatchNumber}
+                    onGenerateBatchNumber={generateGeneralBatchNumber}
+                    generalIssueDate={generalIssueDate}
+                    onGeneralIssueDateChange={setGeneralIssueDate}
+                    generalExpirationDate={generalExpirationDate}
+                    onGeneralExpirationDateChange={setGeneralExpirationDate}
+                  />
+                )}
+
+                {currentStep === 4 && movementType === "entrada" && (
+                  <WizardStep4
+                    generalShelf={generalShelf}
+                    onGeneralShelfChange={setGeneralShelf}
+                    generalDrawer={generalDrawer}
+                    onGeneralDrawerChange={setGeneralDrawer}
+                    generalSection={generalSection}
+                    onGeneralSectionChange={setGeneralSection}
+                    generalLocationNotes={generalLocationNotes}
+                    onGeneralLocationNotesChange={setGeneralLocationNotes}
+                  />
+                )}
+
+                {((currentStep === 5) || (currentStep === 3 && movementType !== "entrada")) && (
+                  <WizardStep5
+                    items={items}
+                    movementType={movementType}
+                    generalReason={generalReason}
+                    generalNotes={generalNotes}
+                    onUpdateItemQuantity={updateItemQuantity}
+                    onRemoveItem={removeItem}
+                    onUpdateItemData={updateItemData}
+                    itemsWithWarning={itemsWithWarning}
+                  />
+                )}
+              </div>
+
+              {/* Navegación sticky */}
+              <WizardNavigation
+                currentStep={currentStep}
+                totalSteps={getTotalSteps()}
+                onNext={goToNextStep}
+                onPrevious={goToPreviousStep}
+                onSubmit={() => handleSubmit({ preventDefault: () => {} } as React.FormEvent)}
+                isSubmitting={isSubmitting}
+                itemsWithQuantity={itemsWithQuantity.length}
+                isValid={!stepErrors[currentStep]}
+                error={stepErrors[currentStep]}
+              />
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DESKTOP GRID VIEW */}
+      {!isMobile && (
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 p-0 sm:p-4 overflow-y-auto">
+          <div
+            ref={modalRef}
+            className="w-full max-w-7xl bg-slate-100 sm:rounded-2xl shadow-2xl flex flex-col h-[95vh] sm:h-[90vh] max-h-[95vh] sm:max-h-[90vh] overflow-hidden sm:my-4"
+          >
+          <form onSubmit={handleSubmit} className="flex flex-col h-full">
           {/* Header fijo */}
           <div className="flex-shrink-0 border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-4 bg-gray-100 sticky top-0 z-10 sm:static">
             <h2 className="text-base sm:text-lg font-bold text-slate-900">Movimiento de Inventario</h2>
@@ -1197,9 +1459,10 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
               </button>
             </div>
           </div>
-        </form>
+          </form>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Scanner Modal */}
       {showScanner && (
