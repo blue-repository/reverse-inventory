@@ -3,21 +3,46 @@ import { supabase } from "@/app/lib/conections/supabase";
 import { Product } from "@/app/types/product";
 import ProductsTable from "@/app/components/ProductsTable";
 import { ThemeWrapper } from "@/app/components/ThemeWrapper";
-import { searchProducts } from "@/app/actions/products";
+import { searchProducts, getAllCategoriesAndSpecialties } from "@/app/actions/products";
 
 async function ProductsContent({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string; pageSize?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    page?: string;
+    pageSize?: string;
+    category?: string;
+    specialty?: string;
+    stockMin?: string;
+    stockMax?: string;
+    expirationFrom?: string;
+    expirationTo?: string;
+    hasImage?: string;
+    hasBarcode?: string;
+  }>;
 }) {
   const params = await searchParams;
   const query = params.q || "";
   const page = parseInt(params.page || "1");
   const pageSize = parseInt(params.pageSize || "20");
 
-  console.log("ProductsContent - searchParams:", { query, page, pageSize });
+  // Construir objeto de filtros
+  const filters = {
+    category: params.category,
+    specialty: params.specialty,
+    stockMin: params.stockMin ? parseInt(params.stockMin) : undefined,
+    stockMax: params.stockMax ? parseInt(params.stockMax) : undefined,
+    expirationDateFrom: params.expirationFrom,
+    expirationDateTo: params.expirationTo,
+    hasImage: params.hasImage === "true",
+    hasBarcode: params.hasBarcode === "true",
+  };
 
-  const { data: products, count, error } = await searchProducts(query, page, pageSize);
+  console.log("ProductsContent - searchParams:", { query, page, pageSize, filters });
+
+  const { data: products, count, error } = await searchProducts(query, page, pageSize, filters);
+  const { categories, specialties } = await getAllCategoriesAndSpecialties();
 
   console.log("Search result:", { productsCount: products?.length, totalCount: count, error });
 
@@ -34,6 +59,8 @@ async function ProductsContent({
           initialPageSize={pageSize}
           totalCount={count || 0}
           currentPage={page}
+          allCategories={categories}
+          allSpecialties={specialties}
         />
       )}
     </>
@@ -43,7 +70,19 @@ async function ProductsContent({
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string; pageSize?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    page?: string;
+    pageSize?: string;
+    category?: string;
+    specialty?: string;
+    stockMin?: string;
+    stockMax?: string;
+    expirationFrom?: string;
+    expirationTo?: string;
+    hasImage?: string;
+    hasBarcode?: string;
+  }>;
 }) {
   return (
     <ThemeWrapper>

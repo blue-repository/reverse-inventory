@@ -6,7 +6,7 @@ import { ProductDetailDrawer } from "./ProductDetailDrawer";
 
 interface BulkMovementItem {
   product: Product;
-  quantity: number;
+  quantity: number | "";
   reason: string;
   notes: string;
   useIndividualReason: boolean;
@@ -30,7 +30,7 @@ interface WizardStep5Props {
   movementType: MovementType;
   generalReason: string;
   generalNotes: string;
-  onUpdateItemQuantity: (productId: string, quantity: number) => void;
+  onUpdateItemQuantity: (productId: string, quantity: number | "") => void;
   onRemoveItem: (productId: string) => void;
   onUpdateItemData: (productId: string, data: Partial<BulkMovementItem>) => void;
   itemsWithWarning: Set<string>;
@@ -47,8 +47,8 @@ export function WizardStep5({
   itemsWithWarning,
 }: WizardStep5Props) {
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const itemsWithQuantity = items.filter((item) => item.quantity > 0);
-  const totalQuantity = itemsWithQuantity.reduce((sum, item) => sum + item.quantity, 0);
+  const itemsWithQuantity = items.filter((item) => item.quantity !== "" && item.quantity > 0);
+  const totalQuantity = itemsWithQuantity.reduce((sum, item) => sum + (typeof item.quantity === "string" ? 0 : item.quantity), 0);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -84,7 +84,7 @@ export function WizardStep5({
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
             {items.map((item) => {
               const hasWarning = itemsWithWarning.has(item.product.id);
-              const hasQuantity = item.quantity > 0;
+              const hasQuantity = item.quantity !== "" && item.quantity > 0;
               
               return (
                 <div
@@ -110,7 +110,7 @@ export function WizardStep5({
                       type="number"
                       min="0"
                       value={item.quantity}
-                      onChange={(e) => onUpdateItemQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                      onChange={(e) => onUpdateItemQuantity(item.product.id, e.target.value === "" ? 0 : parseInt(e.target.value))}
                       placeholder="Cant."
                       className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none"
                     />

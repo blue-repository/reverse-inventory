@@ -8,7 +8,17 @@ import { normalizeSearchText } from "@/app/lib/search-utils";
 export async function searchProducts(
   query: string,
   page: number = 1,
-  pageSize: number = 20
+  pageSize: number = 20,
+  filters?: {
+    category?: string;
+    specialty?: string;
+    stockMin?: number;
+    stockMax?: number;
+    expirationDateFrom?: string;
+    expirationDateTo?: string;
+    hasImage?: boolean;
+    hasBarcode?: boolean;
+  }
 ) {
   const pageStart = (page - 1) * pageSize;
   const pageEnd = page * pageSize - 1;
@@ -25,11 +35,13 @@ export async function searchProducts(
       return { data: [], error: error?.message || "Error al buscar productos", count: 0 };
     }
 
-    // Si hay query, filtrar con normalización
+    let filtered = [...allProducts];
+
+    // Aplicar filtro de búsqueda por query
     if (query.trim()) {
       const normalizedQuery = normalizeSearchText(query);
 
-      const filtered = allProducts.filter((product) => {
+      filtered = filtered.filter((product) => {
         const normalizedName = normalizeSearchText(product.name || "");
         const normalizedDescription = normalizeSearchText(product.description || "");
         const normalizedBarcode = normalizeSearchText(product.barcode || "");
@@ -40,31 +52,62 @@ export async function searchProducts(
           normalizedBarcode.includes(normalizedQuery)
         );
       });
-
-      // Ordenar: primero por stock (descendente para que stock > 0 aparezca primero), luego alfabéticamente
-      filtered.sort((a, b) => {
-        // Primero por stock (mayor a menor)
-        if (b.stock !== a.stock) {
-          return b.stock - a.stock;
-        }
-        // Luego alfabéticamente por nombre
-        return (a.name || "").localeCompare(b.name || "");
-      });
-
-      // Aplicar paginación al resultado filtrado
-      const paginatedData = filtered.slice(pageStart, pageEnd + 1);
-      return { data: paginatedData, error: null, count: filtered.length };
     }
 
-    // Sin query, devolver todos los productos paginados (también ordenados)
-    allProducts.sort((a, b) => {
+    // Aplicar filtros adicionales
+    if (filters) {
+      if (filters.category) {
+        filtered = filtered.filter((product) => product.category === filters.category);
+      }
+
+      if (filters.specialty) {
+        filtered = filtered.filter((product) => product.specialty === filters.specialty);
+      }
+
+      if (filters.stockMin !== undefined) {
+        filtered = filtered.filter((product) => product.stock >= filters.stockMin!);
+      }
+
+      if (filters.stockMax !== undefined) {
+        filtered = filtered.filter((product) => product.stock <= filters.stockMax!);
+      }
+
+      if (filters.expirationDateFrom) {
+        filtered = filtered.filter((product) => {
+          if (!product.expiration_date) return false;
+          return new Date(product.expiration_date) >= new Date(filters.expirationDateFrom!);
+        });
+      }
+
+      if (filters.expirationDateTo) {
+        filtered = filtered.filter((product) => {
+          if (!product.expiration_date) return false;
+          return new Date(product.expiration_date) <= new Date(filters.expirationDateTo!);
+        });
+      }
+
+      if (filters.hasImage) {
+        filtered = filtered.filter((product) => product.image_url && product.image_url.trim() !== "");
+      }
+
+      if (filters.hasBarcode) {
+        filtered = filtered.filter((product) => product.barcode && product.barcode.trim() !== "");
+      }
+    }
+
+    // Ordenar: primero por stock (descendente para que stock > 0 aparezca primero), luego alfabéticamente
+    filtered.sort((a, b) => {
+      // Primero por stock (mayor a menor)
       if (b.stock !== a.stock) {
         return b.stock - a.stock;
       }
+      // Luego alfabéticamente por nombre
       return (a.name || "").localeCompare(b.name || "");
     });
-    const paginatedData = allProducts.slice(pageStart, pageEnd + 1);
-    return { data: paginatedData, error: null, count: allProducts.length };
+
+    // Aplicar paginación al resultado filtrado
+    const paginatedData = filtered.slice(pageStart, pageEnd + 1);
+    return { data: paginatedData, error: null, count: filtered.length };
   } catch (err: any) {
     return {
       data: [],
@@ -781,6 +824,57 @@ export async function deleteBatchWithMovement(
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Error desconocido" };
+  }
+}
+
+export async function getAllCategoriesAndSpecialties() {
+  try {
+    // Obtener todos los productos no eliminados
+    const { data: allProducts, error } = await supabase
+      .from("products")
+      .select("category, specialty")
+      .is("deleted_at", null);
+
+    if (error || !allProducts) {
+      return { categories: [], specialties: [] };
+    }
+
+    // Extraer categorías únicas
+    const categories = Array.from(
+      new Set(allProducts.map((p) => p.category).filter(Boolean))
+    ) as string[];
+    categories.sort();
+
+    // Extraer especialidades únicas
+    const specialties = Array.from(
+      new Set(allProducts.map((p) => p.specialty).filter(Boolean))
+    ) as string[];
+    specialties.sort();
+
+    // Las especialidades predeterminadas siempre disponibles
+    const PREDEFINED_SPECIALTIES = [
+      "Enfermería",
+      "Cirugía",
+      "Traumatología",
+      "Enfermería/Laboratorio clínico y microbiología",
+      "Anestesiología / Cuidados intensivos",
+      "Ginecología / Obstetricia",
+      "Central de esterilización",
+      "Atención Pre-hospitalaria",
+      "Uso General",
+      "Enfermería/Terapia respiratoria",
+      "Especialidades quirúrgicas",
+    ];
+
+    // Combinar especialidades de BD con las predefinidas
+    const allSpecialties = Array.from(
+      new Set([...specialties, ...PREDEFINED_SPECIALTIES])
+    ) as string[];
+    allSpecialties.sort();
+
+    return { categories, specialties: allSpecialties };
+  } catch (err: any) {
+    return { categories: [], specialties: [] };
   }
 }
 
