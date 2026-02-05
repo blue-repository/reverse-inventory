@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { MovementType, Product } from "@/app/types/product";
+import { MovementType, Product, ProductBatch } from "@/app/types/product";
 
 const MOVEMENT_REASONS: Record<MovementType, string[]> = {
   entrada: ["Compra", "Devolución de cliente", "Reposición", "Otro"],
@@ -29,6 +29,10 @@ interface BulkMovementItem {
   prescribedBy?: string;
   cieCode?: string;
   recipeNotes?: string;
+  specifyBatches?: boolean;
+  availableBatches?: ProductBatch[];
+  selectedBatches?: {batchId: string; quantity: number}[];
+  loadingBatches?: boolean;
 }
 
 interface ProductDetailDrawerProps {
@@ -36,6 +40,9 @@ interface ProductDetailDrawerProps {
   movementType: MovementType;
   onClose: () => void;
   onUpdate: (data: Partial<BulkMovementItem>) => void;
+  onToggleSpecifyBatches?: (productId: string) => void;
+  onUpdateBatchQuantity?: (productId: string, batchId: string, quantity: number) => void;
+  onRemoveBatchSelection?: (productId: string, batchId: string) => void;
 }
 
 export function ProductDetailDrawer({
@@ -43,6 +50,9 @@ export function ProductDetailDrawer({
   movementType,
   onClose,
   onUpdate,
+  onToggleSpecifyBatches,
+  onUpdateBatchQuantity,
+  onRemoveBatchSelection,
 }: ProductDetailDrawerProps) {
   const [localData, setLocalData] = useState<Partial<BulkMovementItem>>(item);
 
@@ -225,6 +235,100 @@ export function ProductDetailDrawer({
                 rows={2}
                 className="w-full rounded border border-purple-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none"
               />
+            </div>
+          )}
+
+          {/* Sección de Selección de Lotes (solo para salida) */}
+          {movementType === "salida" && item.availableBatches && item.availableBatches.length > 0 && (
+            <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={item.specifyBatches || false}
+                  onChange={() => onToggleSpecifyBatches?.(item.product.id)}
+                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-xs font-semibold text-slate-700">
+                  Especificar lotes manualmente
+                </span>
+              </label>
+              
+              {item.specifyBatches && (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-600">
+                    Selecciona de qué lotes tomar los productos:
+                  </p>
+                  {item.availableBatches.map((batch) => {
+                    const selectedBatch = item.selectedBatches?.find(s => s.batchId === batch.id);
+                    const isSelected = !!selectedBatch;
+                    const selectedQty = selectedBatch?.quantity;
+                    const isOnlyBatch = item.availableBatches?.length === 1;
+                    
+                    return (
+                      <div
+                        key={batch.id}
+                        className={`border rounded p-2 ${isSelected ? "border-blue-500 bg-white" : "border-slate-200 bg-white"}`}
+                      >
+                        <div className="mb-1.5">
+                          <p className="text-xs font-semibold text-slate-700">
+                            {batch.batch_number}
+                          </p>
+                          <p className="text-[10px] text-slate-600">
+                            Vence: {batch.expiration_date} | Stock: {batch.stock}
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="0"
+                            max={batch.stock}
+                            value={selectedQty ?? ""}
+                            onChange={(e) => {
+                              const qty = parseInt(e.target.value) || 0;
+                              if (qty > 0) {
+                                onUpdateBatchQuantity?.(item.product.id, batch.id, qty);
+                              } else {
+                                onRemoveBatchSelection?.(item.product.id, batch.id);
+                              }
+                            }}
+                            placeholder="Cantidad"
+                            className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-xs"
+                            disabled={isOnlyBatch}
+                            title={isOnlyBatch ? "Con un solo lote, se usa la cantidad total del producto" : ""}
+                          />
+                          {!isOnlyBatch && isSelected && (
+                            <button
+                              type="button"
+                              onClick={() => onRemoveBatchSelection?.(item.product.id, batch.id)}
+                              className="text-red-600 hover:text-red-800 p-1"
+                              title="Quitar este lote"
+                            >
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                        
+                        {isOnlyBatch && (
+                          <p className="text-[10px] text-blue-600 mt-1">
+                            ℹ️ Único lote - usa cantidad del producto
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                  
+                  {item.selectedBatches && item.selectedBatches.length > 0 && (
+                    <div className="border-t border-slate-200 pt-2 mt-2">
+                      <p className="text-xs font-semibold text-slate-700">
+                        Total de lotes: {item.selectedBatches.reduce((sum, s) => sum + s.quantity, 0)} unidades
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

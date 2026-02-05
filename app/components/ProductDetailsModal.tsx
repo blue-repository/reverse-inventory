@@ -42,6 +42,20 @@ export default function ProductDetailsModal({
     setCurrentProduct(product);
   }, [product.id, product]);
 
+  // Cerrar modal con tecla ESC
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !showMovementModal && !showHistoryModal && !showBatchesModal) {
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, showMovementModal, showHistoryModal, showBatchesModal]);
+
   const refreshProduct = async () => {
     try {
       const { data } = await getProduct(product.id);
@@ -88,41 +102,42 @@ export default function ProductDetailsModal({
             </div>
 
             <div className="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4">
-              {currentProduct.image_url ? (
-                <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-50">
-                  <div className="relative h-48 sm:h-64 md:h-80 w-full">
-                    <Image
-                      src={currentProduct.image_url}
-                      alt={currentProduct.name}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 640px) 100vw, (max-width: 768px) 90vw, 448px"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-slate-200 bg-slate-100 h-48 sm:h-64 md:h-80 flex items-center justify-center">
-                  <div className="text-center">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      strokeWidth={1.5}
-                      stroke="currentColor"
-                      className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-slate-400 mb-2"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-6-6.5l5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-6-6.5l5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-6-6.5a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0z"
+              <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-3 sm:gap-4 items-start">
+                {currentProduct.image_url ? (
+                  <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-50">
+                    <div className="relative h-44 sm:h-52 md:h-56 w-full">
+                      <Image
+                        src={currentProduct.image_url}
+                        alt={currentProduct.name}
+                        fill
+                        className="object-contain"
+                        sizes="(max-width: 768px) 100vw, 220px"
                       />
-                    </svg>
-                    <p className="text-slate-500 text-xs sm:text-sm">Sin imagen disponible</p>
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="rounded-lg border border-slate-200 bg-slate-100 h-44 sm:h-52 md:h-56 flex items-center justify-center">
+                    <div className="text-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-slate-400 mb-2"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-6-6.5l5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-6-6.5l5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-6-6.5a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0z"
+                        />
+                      </svg>
+                      <p className="text-slate-500 text-xs sm:text-sm">Sin imagen disponible</p>
+                    </div>
+                  </div>
+                )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Código de Barras</p>
                   <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{currentProduct.barcode || "—"}</p>
@@ -185,6 +200,7 @@ export default function ProductDetailsModal({
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha de Expiración</p>
                   <p className="mt-1 text-sm sm:text-base text-slate-900 font-medium">{formatDate(currentProduct.expiration_date)}</p>
                 </div>
+                </div>
               </div>
 
               {/* Sección de Lotes */}
@@ -219,7 +235,7 @@ export default function ProductDetailsModal({
                   
                   // Filtrar lotes activos y calcular días hasta vencimiento
                   const activeBatchesWithDays = batches
-                    .filter((batch) => batch.is_active)
+                    .filter((batch) => batch.is_active && batch.stock > 0)
                     .map((batch) => {
                       const expDate = new Date(batch.expiration_date);
                       const daysUntil = Math.floor(

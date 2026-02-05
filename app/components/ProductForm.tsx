@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Product, UNITS_OF_MEASURE } from "@/app/types/product";
 import { createProduct, updateProduct } from "@/app/actions/products";
 import BarcodeScannerModal from "./BarcodeScannerModal";
@@ -86,6 +86,19 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
   const [selectedUnitOfMeasure, setSelectedUnitOfMeasure] = useState<string>(product?.unit_of_measure || "");
   const [selectedReportingUnit, setSelectedReportingUnit] = useState<string>(product?.reporting_unit || "");
   const [selectedAdminRoute, setSelectedAdminRoute] = useState<string>(product?.administration_route || "");
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !showScanner) {
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, showScanner]);
 
   const readFileAsDataURL = (file: File) =>
     new Promise<string>((resolve, reject) => {

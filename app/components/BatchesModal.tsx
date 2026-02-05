@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ProductBatch } from "@/app/types/product";
 import { deleteBatch } from "@/app/actions/products";
 import DeleteBatchModal from "./DeleteBatchModal";
@@ -24,6 +24,13 @@ export default function BatchesModal({
 }: BatchesModalProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedBatchForDelete, setSelectedBatchForDelete] = useState<ProductBatch | null>(null);
+  const [filters, setFilters] = useState({
+    total: false,
+    active: false,
+    expiring: false,
+    expired: false,
+    noStock: false,
+  });
 
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return "—";
@@ -37,7 +44,10 @@ export default function BatchesModal({
     return diff;
   };
 
-  const getExpirationStatus = (expirationDate: string) => {
+  const getExpirationStatus = (expirationDate: string, stock: number) => {
+    if (stock <= 0) {
+      return { label: "Sin stock", color: "bg-slate-100 text-slate-600" };
+    }
     const days = getDaysUntilExpiration(expirationDate);
     if (days < 0) return { label: "Vencido", color: "bg-red-100 text-red-800" };
     if (days <= 7) return { label: "Crítico", color: "bg-red-100 text-red-800" };
@@ -58,6 +68,68 @@ export default function BatchesModal({
       return daysA - daysB;
     });
   const inactiveBatches = batches.filter((b) => !b.is_active);
+
+  const activeBatchesWithStock = activeBatches.filter((b) => b.stock > 0);
+  const activeBatchesNoStock = activeBatches.filter((b) => b.stock <= 0);
+  const expiringBatches = activeBatchesWithStock.filter((b) => {
+    const days = getDaysUntilExpiration(b.expiration_date);
+    return days >= 0 && days <= 15;
+  });
+  const expiredBatches = activeBatchesWithStock.filter(
+    (b) => getDaysUntilExpiration(b.expiration_date) < 0
+  );
+  const totalStock = activeBatchesWithStock.reduce((sum, b) => sum + b.stock, 0);
+
+  const toggleFilter = (key: keyof typeof filters) => {
+    setFilters((prev) => {
+      if (prev[key]) {
+        return {
+          total: false,
+          active: false,
+          expiring: false,
+          expired: false,
+          noStock: false,
+        };
+      }
+
+      return {
+        total: key === "total",
+        active: key === "active",
+        expiring: key === "expiring",
+        expired: key === "expired",
+        noStock: key === "noStock",
+      };
+    });
+  };
+
+  const filteredActiveBatches = activeBatches.filter((batch) => {
+    const days = getDaysUntilExpiration(batch.expiration_date);
+
+    if (filters.total) return true;
+    if (filters.active) return batch.stock > 0;
+    if (filters.expiring) return batch.stock > 0 && days >= 0 && days <= 15;
+    if (filters.expired) return batch.stock > 0 && days < 0;
+    if (filters.noStock) return batch.stock <= 0;
+
+    return true;
+  });
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (selectedBatchForDelete) {
+          setSelectedBatchForDelete(null);
+        } else {
+          onClose();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, selectedBatchForDelete]);
 
   return (
     <div
@@ -117,6 +189,24 @@ export default function BatchesModal({
               </svg>
               <p className="text-slate-600 text-sm">No hay lotes activos para este producto</p>
             </div>
+          ) : filteredActiveBatches.length === 0 ? (
+            <div className="rounded-lg border-2 border-dashed border-slate-300 p-6 text-center">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+                className="h-12 w-12 mx-auto text-slate-400 mb-2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m6 4.5v2.25m3-6v6m3-6v2.25m-13.5 0h13.5"
+                />
+              </svg>
+              <p className="text-slate-600 text-sm">No hay lotes que coincidan con los filtros</p>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs sm:text-sm min-w-[640px]">
@@ -143,8 +233,8 @@ export default function BatchesModal({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {activeBatches.map((batch) => {
-                    const status = getExpirationStatus(batch.expiration_date);
+                  {filteredActiveBatches.map((batch) => {
+                    const status = getExpirationStatus(batch.expiration_date, batch.stock);
                     const daysUntil = getDaysUntilExpiration(batch.expiration_date);
 
                     return (
@@ -278,32 +368,62 @@ export default function BatchesModal({
           )}
 
           {/* Resumen */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-slate-200">
-            <div className="bg-blue-50 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-blue-600">
-                {activeBatches.reduce((sum, b) => sum + b.stock, 0)}
-              </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-4 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => toggleFilter("total")}
+              aria-pressed={filters.total}
+              className={`bg-blue-50 rounded-lg p-3 text-center transition-shadow ${
+                filters.total ? "ring-2 ring-blue-400 ring-offset-2" : "hover:shadow"
+              }`}
+            >
+              <div className="text-2xl font-bold text-blue-600">{totalStock}</div>
               <div className="text-xs text-blue-700">Stock Total</div>
-            </div>
-            <div className="bg-green-50 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-green-600">{activeBatches.length}</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleFilter("active")}
+              aria-pressed={filters.active}
+              className={`bg-green-50 rounded-lg p-3 text-center transition-shadow ${
+                filters.active ? "ring-2 ring-green-400 ring-offset-2" : "hover:shadow"
+              }`}
+            >
+              <div className="text-2xl font-bold text-green-600">{activeBatchesWithStock.length}</div>
               <div className="text-xs text-green-700">Lotes Activos</div>
-            </div>
-            <div className="bg-yellow-50 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-yellow-600">
-                {activeBatches.filter((b) => {
-                  const days = getDaysUntilExpiration(b.expiration_date);
-                  return days >= 0 && days <= 15;
-                }).length}
-              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleFilter("expiring")}
+              aria-pressed={filters.expiring}
+              className={`bg-yellow-50 rounded-lg p-3 text-center transition-shadow ${
+                filters.expiring ? "ring-2 ring-yellow-400 ring-offset-2" : "hover:shadow"
+              }`}
+            >
+              <div className="text-2xl font-bold text-yellow-600">{expiringBatches.length}</div>
               <div className="text-xs text-yellow-700">Por Vencer</div>
-            </div>
-            <div className="bg-red-50 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-red-600">
-                {activeBatches.filter((b) => getDaysUntilExpiration(b.expiration_date) < 0).length}
-              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleFilter("expired")}
+              aria-pressed={filters.expired}
+              className={`bg-red-50 rounded-lg p-3 text-center transition-shadow ${
+                filters.expired ? "ring-2 ring-red-400 ring-offset-2" : "hover:shadow"
+              }`}
+            >
+              <div className="text-2xl font-bold text-red-600">{expiredBatches.length}</div>
               <div className="text-xs text-red-700">Vencidos</div>
-            </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleFilter("noStock")}
+              aria-pressed={filters.noStock}
+              className={`bg-slate-100 rounded-lg p-3 text-center transition-shadow ${
+                filters.noStock ? "ring-2 ring-slate-400 ring-offset-2" : "hover:shadow"
+              }`}
+            >
+              <div className="text-2xl font-bold text-slate-700">{activeBatchesNoStock.length}</div>
+              <div className="text-xs text-slate-600">Sin stock</div>
+            </button>
           </div>
         </div>
 

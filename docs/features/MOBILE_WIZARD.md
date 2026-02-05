@@ -281,4 +281,3 @@ Paso 5 (Resumen) → Guardar
 ## ✨ Conclusión
 
 La implementación del wizard mobile proporciona una **experiencia de usuario significativamente mejorada en smartphones**, eliminando la necesidad de scrolling excesivo y organizando la información en pasos manejables, mientras mantiene la funcionalidad completa de la vista desktop sin compromisos.
-

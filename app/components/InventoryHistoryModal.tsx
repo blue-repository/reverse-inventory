@@ -48,6 +48,19 @@ export default function InventoryHistoryModal({
     loadMovements();
   }, [product.id]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("es-EC", {
       year: "numeric",

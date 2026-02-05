@@ -325,7 +325,16 @@ export async function recordInventoryMovement(
   quantity: number,
   reason?: string,
   notes?: string,
-  recordedBy?: string
+  recordedBy?: string,
+  recipeData?: {
+    recipeCode?: string;
+    recipeDate?: string;
+    patientName?: string;
+    prescribedBy?: string;
+    cieCode?: string;
+    recipeNotes?: string;
+  },
+  specificBatches?: { batchId: string; quantity: number }[]
 ) {
   if (quantity <= 0) {
     return { success: false, error: "La cantidad debe ser mayor a 0" };
@@ -343,6 +352,297 @@ export async function recordInventoryMovement(
     return { success: false, error: "Producto no encontrado" };
   }
 
+  // Si se especifican lotes para salida, procesar con FEFO avanzado
+  if (movementType === "salida" && specificBatches && specificBatches.length > 0) {
+    try {
+      // Obtener todos los lotes del producto ordenados por fecha de vencimiento (FEFO)
+      const { data: allBatches, error: batchesError } = await supabase
+        .from("product_batches")
+        .select("*")
+        .eq("product_id", productId)
+        .eq("is_active", true)
+        .gt("stock", 0) // Solo lotes con stock > 0
+        .order("expiration_date", { ascending: true });
+
+      if (batchesError || !allBatches) {
+        return { success: false, error: "Error al obtener los lotes" };
+      }
+
+      // Calcular cantidad total especificada por el usuario
+      const totalFromSpecified = specificBatches.reduce((sum, b) => sum + b.quantity, 0);
+      let remainingQuantity = quantity - totalFromSpecified;
+
+      // Crear un mapa de actualizaciones de lotes
+      const batchUpdates = new Map<string, number>();
+      const batchChanges = new Map<string, { before: number; after: number; quantity: number }>();
+
+      const addBatchChange = (batchId: string, before: number, after: number, quantity: number) => {
+        const existing = batchChanges.get(batchId);
+        if (existing) {
+          batchChanges.set(batchId, {
+            before: existing.before,
+            after,
+            quantity: existing.quantity + quantity,
+          });
+          return;
+        }
+        batchChanges.set(batchId, { before, after, quantity });
+      };
+
+      // 1. Procesar lotes especificados por el usuario
+      for (const batchSelection of specificBatches) {
+        const batch = allBatches.find(b => b.id === batchSelection.batchId);
+        if (!batch) {
+          return { success: false, error: `Lote no encontrado: ${batchSelection.batchId}` };
+        }
+
+        if (batch.stock < batchSelection.quantity) {
+          return { success: false, error: `Stock insuficiente en el lote ${batch.batch_number}. Disponible: ${batch.stock}` };
+        }
+
+        const newStock = batch.stock - batchSelection.quantity;
+        batchUpdates.set(batch.id, newStock);
+        addBatchChange(batch.id, batch.stock, newStock, batchSelection.quantity);
+      }
+
+      // 2. Si hay cantidad restante, aplicar FEFO 
+      if (remainingQuantity > 0) {
+        // Obtener lotes disponibles excluyendo los ya especificados
+        // Ordenar por fecha de vencimiento (más cercana primero)
+        const batchesForFefo = allBatches
+          .filter(b => !specificBatches.some(s => s.batchId === b.id))
+          .sort((a, b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
+
+        // Intentar descontar de otros lotes (FEFO)
+        for (const batch of batchesForFefo) {
+          if (remainingQuantity <= 0) break;
+
+          const currentStock = batchUpdates.get(batch.id) ?? batch.stock;
+          if (currentStock > 0) {
+            const quantityFromBatch = Math.min(currentStock, remainingQuantity);
+            const newStock = currentStock - quantityFromBatch;
+            batchUpdates.set(batch.id, newStock);
+            addBatchChange(batch.id, currentStock, newStock, quantityFromBatch);
+            remainingQuantity -= quantityFromBatch;
+          }
+        }
+
+        // 3. Si todavía queda cantidad restante, volver a sacar de los lotes especificados originalmente
+        if (remainingQuantity > 0) {
+          for (const batchSelection of specificBatches) {
+            if (remainingQuantity <= 0) break;
+
+            const batch = allBatches.find(b => b.id === batchSelection.batchId);
+            if (!batch) continue;
+
+            const currentStock = batchUpdates.get(batch.id) ?? batch.stock;
+            if (currentStock > 0) {
+              const additionalQuantity = Math.min(currentStock, remainingQuantity);
+              const newStock = currentStock - additionalQuantity;
+              batchUpdates.set(batch.id, newStock);
+              addBatchChange(batch.id, currentStock, newStock, additionalQuantity);
+              remainingQuantity -= additionalQuantity;
+            }
+          }
+        }
+
+        // 4. Si aún queda cantidad restante, se descuenta solo del stock general del producto
+        // (No se hace nada con los lotes, el stock general siempre se actualiza al final)
+      }
+
+      // Validar que ningún lote quede con stock negativo
+      for (const [batchId, newStock] of batchUpdates) {
+        if (newStock < 0) {
+          return { success: false, error: "Error interno: stock negativo calculado en lote" };
+        }
+      }
+
+      // Aplicar todas las actualizaciones de lotes
+      for (const [batchId, newStock] of batchUpdates) {
+        await supabase
+          .from("product_batches")
+          .update({
+            stock: newStock,
+            updated_at: new Date().toISOString(),
+            updated_by: recordedBy || "Sistema"
+          })
+          .eq("id", batchId);
+      }
+
+      // Decrementar stock total del producto SIEMPRE por la cantidad total solicitada
+      const newStock = (productData.stock || 0) - quantity;
+      if (newStock < 0) {
+        return { success: false, error: "Stock insuficiente en el producto" };
+      }
+
+      await supabase
+        .from("products")
+        .update({
+          stock: newStock,
+          updated_at: new Date().toISOString(),
+          updated_by: recordedBy || "Sistema"
+        })
+        .eq("id", productId);
+
+      // Registrar el movimiento
+      const isRecipeMovement = reason === "Entrega de receta";
+
+      const movement: any = {
+        product_id: productId,
+        movement_type: movementType,
+        quantity,
+        reason: reason || null,
+        notes: notes || null,
+        recorded_by: recordedBy || "Sistema",
+      };
+
+      if (isRecipeMovement && recipeData) {
+        movement.is_recipe_movement = true;
+        movement.prescription_group_id = crypto.randomUUID();
+        movement.recipe_code = recipeData.recipeCode || null;
+        movement.recipe_date = recipeData.recipeDate || null;
+        movement.patient_name = recipeData.patientName || null;
+        movement.prescribed_by = recipeData.prescribedBy || null;
+        movement.cie_code = recipeData.cieCode || null;
+        movement.recipe_notes = recipeData.recipeNotes || null;
+      }
+
+      const { data, error } = await supabase
+        .from("inventory_movements")
+        .insert([movement])
+        .select();
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      if (data && data.length > 0 && batchChanges.size > 0) {
+        await recordBatchDetails(data[0].id, batchChanges);
+      }
+
+      revalidatePath("/");
+      return { success: true, data };
+    } catch (err: any) {
+      return { success: false, error: err.message || "Error al procesar los lotes" };
+    }
+  }
+
+  // Lógica para cuando no se especifican lotes
+  // Si es una salida, aplicar FEFO automáticamente
+  if (movementType === "salida") {
+    try {
+      // Obtener todos los lotes del producto ordenados por fecha de vencimiento (FEFO)
+      const { data: allBatches, error: batchesError } = await supabase
+        .from("product_batches")
+        .select("*")
+        .eq("product_id", productId)
+        .eq("is_active", true)
+        .gt("stock", 0)
+        .order("expiration_date", { ascending: true });
+
+      if (batchesError) {
+        return { success: false, error: "Error al obtener los lotes" };
+      }
+
+      // Aplicar FEFO automático
+      let remainingToAllocate = quantity;
+      const batchUpdates = new Map<string, number>();
+      const batchChanges = new Map<string, { before: number; after: number; quantity: number }>();
+
+      if (allBatches && allBatches.length > 0) {
+        for (const batch of allBatches) {
+          if (remainingToAllocate <= 0) break;
+
+          const quantityFromBatch = Math.min(batch.stock, remainingToAllocate);
+          const newStock = batch.stock - quantityFromBatch;
+          batchUpdates.set(batch.id, newStock);
+          batchChanges.set(batch.id, {
+            before: batch.stock,
+            after: newStock,
+            quantity: quantityFromBatch,
+          });
+          remainingToAllocate -= quantityFromBatch;
+        }
+
+        // Aplicar actualizaciones a los lotes
+        for (const [batchId, newStock] of batchUpdates) {
+          if (newStock < 0) {
+            return { success: false, error: "Error interno: stock negativo calculado" };
+          }
+
+          await supabase
+            .from("product_batches")
+            .update({
+              stock: newStock,
+              updated_at: new Date().toISOString(),
+              updated_by: recordedBy || "Sistema"
+            })
+            .eq("id", batchId);
+        }
+      }
+
+      // Si quedó cantidad sin asignar a lotes, se descuenta solo del stock general
+      // (esto puede pasar si no hay suficientes lotes)
+
+      // Actualizar stock total del producto
+      const newStock = (productData.stock || 0) - quantity;
+      if (newStock < 0) {
+        return { success: false, error: "Stock insuficiente" };
+      }
+
+      await supabase
+        .from("products")
+        .update({
+          stock: newStock,
+          updated_at: new Date().toISOString(),
+          updated_by: recordedBy || "Sistema"
+        })
+        .eq("id", productId);
+
+      // Registrar el movimiento
+      const isRecipeMovement = reason === "Entrega de receta";
+
+      const movement: any = {
+        product_id: productId,
+        movement_type: movementType,
+        quantity,
+        reason: reason || null,
+        notes: notes || null,
+        recorded_by: recordedBy || "Sistema",
+      };
+
+      if (isRecipeMovement && recipeData) {
+        movement.is_recipe_movement = true;
+        movement.prescription_group_id = crypto.randomUUID();
+        movement.recipe_code = recipeData.recipeCode || null;
+        movement.recipe_date = recipeData.recipeDate || null;
+        movement.patient_name = recipeData.patientName || null;
+        movement.prescribed_by = recipeData.prescribedBy || null;
+        movement.cie_code = recipeData.cieCode || null;
+        movement.recipe_notes = recipeData.recipeNotes || null;
+      }
+
+      const { data, error } = await supabase
+        .from("inventory_movements")
+        .insert([movement])
+        .select();
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      if (data && data.length > 0 && batchChanges.size > 0) {
+        await recordBatchDetails(data[0].id, batchChanges);
+      }
+
+      revalidatePath("/");
+      return { success: true, data };
+    } catch (err: any) {
+      return { success: false, error: err.message || "Error al procesar la salida" };
+    }
+  }
+
+  // Para entradas y ajustes, lógica normal (no afecta lotes)
   const delta = movementType === "entrada" ? quantity : -quantity;
   const newStock = (productData.stock || 0) + delta;
 
@@ -350,7 +650,11 @@ export async function recordInventoryMovement(
     return { success: false, error: "Stock insuficiente" };
   }
 
-  const movement = {
+  // Nota: En este punto, movementType podría ser "entrada" o "ajuste" porque
+  // las salidas se manejan en bloques anteriores, por lo que isRecipeMovement siempre será false
+  const isRecipeMovement = false; // Solo salidas pueden ser recetas, y ya se manejaron arriba
+
+  const movement: any = {
     product_id: productId,
     movement_type: movementType,
     quantity,
@@ -358,6 +662,18 @@ export async function recordInventoryMovement(
     notes: notes || null,
     recorded_by: recordedBy || "Sistema",
   };
+
+  // Agregar campos de receta si es una entrega de receta
+  if (isRecipeMovement && recipeData) {
+    movement.is_recipe_movement = true;
+    movement.prescription_group_id = crypto.randomUUID();
+    movement.recipe_code = recipeData.recipeCode || null;
+    movement.recipe_date = recipeData.recipeDate || null;
+    movement.patient_name = recipeData.patientName || null;
+    movement.prescribed_by = recipeData.prescribedBy || null;
+    movement.cie_code = recipeData.cieCode || null;
+    movement.recipe_notes = recipeData.recipeNotes || null;
+  }
 
   const { data, error } = await supabase
     .from("inventory_movements")
@@ -435,10 +751,7 @@ export async function recordBulkInventoryMovements(
       }
     }
 
-    // Procesar cada movimiento
-    const insertData = [];
-    const updatePromises = [];
-
+    // Procesar cada movimiento individualmente para rastrear IDs
     for (const movement of movements) {
       // Obtener el producto actual para calcular nuevo stock
       const { data: productData } = await supabase
@@ -451,7 +764,7 @@ export async function recordBulkInventoryMovements(
       const newStock = (productData?.stock || 0) + delta;
 
       // Registrar movimiento de inventario
-      insertData.push({
+      const movementData = {
         product_id: movement.product_id,
         movement_type: movement.type,
         quantity: movement.quantity,
@@ -470,11 +783,22 @@ export async function recordBulkInventoryMovements(
         prescribed_by: movement.prescribed_by || null,
         cie_code: movement.cie_code || null,
         recipe_notes: movement.recipe_notes || null,
-      });
+      };
+
+      // Insertar movimiento y obtener su ID
+      const { data: insertedMovement, error: movementError } = await supabase
+        .from("inventory_movements")
+        .insert([movementData])
+        .select("id")
+        .single();
+
+      if (movementError || !insertedMovement) {
+        return { success: false, error: movementError?.message || "Error al insertar movimiento" };
+      }
 
       // Si es entrada y tienen datos de lote, crear el batch
       if (movement.type === "entrada" && movement.batch_number) {
-        insertData.push({
+        const batchData = {
           product_id: movement.product_id,
           batch_number: movement.batch_number,
           stock: movement.quantity,
@@ -486,80 +810,41 @@ export async function recordBulkInventoryMovements(
           section: movement.section || null,
           location_notes: movement.location_notes || null,
           is_active: true,
-        });
+          created_by: movement.user_id || "Sistema",
+          updated_by: movement.user_id || "Sistema",
+        };
+
+        // Insertar lote y obtener su ID
+        const { data: insertedBatch, error: batchError } = await supabase
+          .from("product_batches")
+          .insert([batchData])
+          .select("id")
+          .single();
+
+        if (batchError || !insertedBatch) {
+          return { success: false, error: batchError?.message || "Error al insertar lote" };
+        }
+
+        // Registrar relación en movement_batch_details
+        await supabase.from("movement_batch_details").insert([{
+          movement_id: insertedMovement.id,
+          batch_id: insertedBatch.id,
+          quantity: movement.quantity,
+          batch_stock_before: 0, // Para entradas, el lote se crea nuevo
+          batch_stock_after: movement.quantity,
+        }]);
       }
 
       // Actualizar stock del producto
-      updatePromises.push(
-        supabase
-          .from("products")
-          .update({
-            stock: newStock,
-            updated_at: new Date().toISOString(),
-            updated_by: movement.user_id || "Sistema",
-          })
-          .eq("id", movement.product_id)
-      );
+      await supabase
+        .from("products")
+        .update({
+          stock: newStock,
+          updated_at: new Date().toISOString(),
+          updated_by: movement.user_id || "Sistema",
+        })
+        .eq("id", movement.product_id);
     }
-
-    // Insertar movimientos de inventario
-    const { error: insertError } = await supabase
-      .from("inventory_movements")
-      .insert(
-        insertData.filter(
-          (item) => item.movement_type !== undefined
-        ) as Array<{
-          product_id: string;
-          movement_type: MovementType;
-          quantity: number;
-          reason: string | null;
-          notes: string | null;
-          recorded_by: string;
-          movement_group_id: string | null;
-          movement_date: string | null;
-          is_recipe_movement: boolean;
-          prescription_group_id: string | null;
-          recipe_code: string | null;
-          recipe_date: string | null;
-          patient_name: string | null;
-          prescribed_by: string | null;
-          cie_code: string | null;
-          recipe_notes: string | null;
-        }>
-      );
-
-    if (insertError) {
-      return { success: false, error: insertError.message };
-    }
-
-    // Insertar batches si hay
-    const batches = insertData.filter((item) => item.batch_number !== undefined);
-    if (batches.length > 0) {
-      const { error: batchError } = await supabase
-        .from("product_batches")
-        .insert(
-          batches as Array<{
-            product_id: string;
-            batch_number: string;
-            stock: number;
-            initial_stock: number;
-            issue_date: string;
-            expiration_date: string;
-            shelf: string | null;
-            drawer: string | null;
-            section: string | null;
-            location_notes: string | null;
-            is_active: boolean;
-          }>
-        );
-
-      if (batchError) {
-        return { success: false, error: batchError.message };
-      }
-    }
-
-    // Ejecutar todas las actualizaciones de stock
-    await Promise.all(updatePromises);
 
     revalidatePath("/");
     return { success: true, count: movements.length };
@@ -569,6 +854,27 @@ export async function recordBulkInventoryMovements(
       success: false,
       error: error instanceof Error ? error.message : "Error desconocido",
     };
+  }
+}
+
+async function recordBatchDetails(
+  movementId: string,
+  batchChanges: Map<string, { before: number; after: number; quantity: number }>
+) {
+  const batchDetailsToInsert = [];
+
+  for (const [batchId, change] of batchChanges.entries()) {
+    batchDetailsToInsert.push({
+      movement_id: movementId,
+      batch_id: batchId,
+      quantity: change.quantity,
+      batch_stock_before: change.before,
+      batch_stock_after: change.after,
+    });
+  }
+
+  if (batchDetailsToInsert.length > 0) {
+    await supabase.from("movement_batch_details").insert(batchDetailsToInsert);
   }
 }
 

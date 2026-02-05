@@ -246,4 +246,3 @@ Componentes:
 - `BarcodeScannerModal` - Modal principal con escáner
 - `ScanResultsCart` - Carrito de resultados
 - Integraciones en `ProductsTableClient`
-

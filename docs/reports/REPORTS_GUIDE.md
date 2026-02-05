@@ -1,12 +1,12 @@
-# Sistema de Reportes - Guía de Uso
+# 📊 Sistema de Reportes - Guía Completa
 
-## 📊 Introducción
+## 🎉 Introducción
 
-El sistema de reportes permite generar reportes detallados de:
-- **Egresos (Salidas)**: Productos vendidos o retirados del inventario
-- **Ingresos (Entradas)**: Productos comprados o añadidos al inventario
+El sistema de reportes de Bagatela Inventory permite generar reportes detallados de:
+- **Egresos (Salidas)**: Productos vendidos, recetados o retirados del inventario
+- **Ingresos (Entradas)**: Productos comprados, recibidos o añadidos al inventario
 
-Los reportes se pueden filtrar por rango de fechas y descargar en formato CSV.
+Los reportes se pueden filtrar por rango de fechas, descargar en CSV, imprimir como PDF y contienen toda la información de movimientos con datos de pacientes, prescriptores, lotes y más.
 
 ---
 
@@ -14,6 +14,9 @@ Los reportes se pueden filtrar por rango de fechas y descargar en formato CSV.
 
 1. Haz clic en el botón **"📊 Reportes"** en la barra de navegación superior
 2. Se abrirá la página de reportes con opciones de filtrado
+3. Selecciona tu tipo de reporte (Egresos o Ingresos)
+4. Define el rango de fechas (Desde / Hasta)
+5. Haz clic en **"Generar"**
 
 ---
 
@@ -34,12 +37,12 @@ El sistema cargará y mostrará todos los registros que coincidan con tu búsque
 
 ---
 
-## 📊 Columnas del Reporte de Egresos
+## 📊 Columnas del Reporte de Egresos (Salidas)
 
 | Columna | Descripción |
 |---------|-------------|
 | **Fecha** | Fecha del movimiento |
-| **Hora** | Hora del movimiento |
+| **Hora** | Hora exacta del movimiento |
 | **Código** | Código de barras del producto |
 | **Producto** | Nombre del producto |
 | **Categoría** | Categoría del producto |
@@ -50,19 +53,19 @@ El sistema cargará y mostrará todos los registros que coincidan con tu búsque
 | **Motivo** | Razón del movimiento (venta, regalo, etc.) |
 | **Código Receta** | Código de la receta (si es una venta con receta) |
 | **Fecha Receta** | Fecha de la receta médica |
-| **Paciente** | Nombre del paciente |
+| **Paciente** | Nombre del paciente que recibió el producto |
 | **Prescriptor** | Médico o profesional que prescribió |
-| **Código CIE** | Código CIE de la enfermedad |
+| **Código CIE** | Código CIE de la enfermedad/diagnóstico |
 | **Usuario** | Usuario que registró el movimiento |
 
 ---
 
-## 📦 Columnas del Reporte de Ingresos
+## 📦 Columnas del Reporte de Ingresos (Entradas)
 
 | Columna | Descripción |
 |---------|-------------|
 | **Fecha** | Fecha del movimiento |
-| **Hora** | Hora del movimiento |
+| **Hora** | Hora exacta del movimiento |
 | **Código** | Código de barras del producto |
 | **Producto** | Nombre del producto |
 | **Categoría** | Categoría del producto |
@@ -70,7 +73,7 @@ El sistema cargará y mostrará todos los registros que coincidan con tu búsque
 | **Cantidad** | Cantidad de unidades recibidas |
 | **Unidad** | Unidad de medida |
 | **Lote** | Número de lote del producto |
-| **Fecha Emisión** | Fecha de emisión del documento |
+| **Fecha Emisión** | Fecha de emisión del documento/factura |
 | **Fecha Vencimiento** | Fecha de vencimiento del producto |
 | **Motivo** | Razón del ingreso (compra, devolución, etc.) |
 | **Ubicación** | Ubicación de almacenamiento (estante, cajón, etc.) |
@@ -84,10 +87,11 @@ El sistema cargará y mostrará todos los registros que coincidan con tu búsque
 - Imprime el reporte en formato de tabla
 - Se puede guardar como PDF usando la opción de impresión del navegador
 - Incluye los datos del período seleccionado
+- Muestra el resumen con estadísticas
 
 ### Descargar CSV (📥)
 - Descarga el reporte en formato CSV (Excel compatible)
-- Usa punto y coma (;) como delimitador
+- Usa punto y coma (`;`) como delimitador
 - Puede abrirse en Excel, Google Sheets o cualquier aplicación de hoja de cálculo
 - Nombre del archivo: `reporte-[tipo]-[fecha].csv`
 
@@ -103,7 +107,7 @@ Cada reporte muestra un resumen con:
 
 ---
 
-## 💡 Casos de Uso
+## 💡 Casos de Uso Prácticos
 
 ### Caso 1: Auditoría de Ventas
 1. Selecciona "Egresos"
@@ -128,6 +132,12 @@ Cada reporte muestra un resumen con:
 2. Descarga ambos en CSV
 3. Combina los datos en un análisis más completo
 4. Presenta a la junta directiva
+
+### Caso 5: Conciliación de Inventario
+1. Genera un reporte de Egresos para el mes
+2. Genera un reporte de Ingresos para el mes
+3. Descarga ambos como CSV
+4. Calcula: Inventario Inicial + Ingresos - Egresos = Inventario Final
 
 ---
 
@@ -157,7 +167,11 @@ GET /api/reports/ingresos?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
       "codigo": "123456",
       "producto": "Paracetamol 500mg",
       "cantidad": 10,
-      ...
+      "lote": "LOTE-20250110-001",
+      "motivo": "Venta",
+      "paciente": "Juan Pérez",
+      "prescriptor": "Dr. García",
+      "usuario": "usuario@example.com"
     }
   ],
   "summary": {
@@ -180,6 +194,8 @@ GET /api/reports/ingresos?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
 ✅ **Información completa** de cada movimiento
 ✅ **Resúmenes automáticos** de cantidades y registros
 ✅ **Interfaz intuitiva** fácil de usar
+✅ **Sin límite de registros** puedes descargar miles
+✅ **Datos de auditoría** completos con usuario y timestamp
 
 ---
 
@@ -195,6 +211,8 @@ Asegúrate de:
 - Cumplir con regulaciones de privacidad de salud
 - No compartir reportes sin autorización
 - Cumplir LGPD/HIPAA si es aplicable
+- Auditar quién descarga los reportes
+- Mantener un registro de auditoría de acceso
 
 ---
 
@@ -215,12 +233,54 @@ R: No, solo incluyen Egresos (salidas) e Ingresos (entradas) según lo seleccion
 **P: ¿Qué pasa si no hay datos en el período?**
 R: El reporte mostrará "No hay registros para el período seleccionado".
 
+**P: ¿Puedo filtrar por producto específico?**
+R: Actualmente se filtran por rango de fechas. Puedes descargar como CSV y filtrar en Excel.
+
+**P: ¿Qué formato es el CSV?**
+R: Punto y coma (;) como delimitador, UTF-8 encoding, compatible con Excel.
+
 ---
 
-## 📞 Soporte
+## 📞 Solución de Problemas
 
 Si tienes problemas con los reportes:
-1. Verifica que las fechas sean válidas (formato YYYY-MM-DD)
-2. Asegúrate de que existen registros en el período seleccionado
-3. Intenta generar un reporte para un período más amplio
-4. Revisa la consola del navegador (F12) para mensajes de error
+
+1. **Verifica que las fechas sean válidas** (formato YYYY-MM-DD)
+2. **Asegúrate de que existen registros** en el período seleccionado
+3. **Intenta generar un reporte** para un período más amplio
+4. **Revisa la consola del navegador** (F12) para mensajes de error
+5. **Intenta limpiar el caché** del navegador
+6. **Reinicia tu sesión** si persisten los errores
+
+---
+
+## 📁 Archivos Implementados
+
+### Frontend
+- `app/reports/page.tsx` - Interfaz de reportes (442 líneas)
+
+### Backend APIs
+- `app/api/reports/egresos/route.ts` - API para reportes de salidas
+- `app/api/reports/ingresos/route.ts` - API para reportes de entradas
+
+### Documentación
+- REPORTS_GUIDE.md - Esta guía completa
+- SYSTEM_REPORTS_IMPLEMENTATION.md - Documentación técnica para desarrolladores
+
+---
+
+## 🚀 Próximas Mejoras Opcionales
+
+- [ ] Filtro por producto específico
+- [ ] Filtro por usuario
+- [ ] Gráficas y visualizaciones
+- [ ] Reportes programados
+- [ ] Envío por email
+- [ ] Exportación a múltiples formatos
+- [ ] Comparativa entre períodos
+- [ ] Análisis de tendencias
+- [ ] Alertas automáticas de stock bajo
+
+---
+
+**Última actualización:** 5 de febrero de 2026

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Product, MovementType } from "@/app/types/product";
+import { Product, MovementType, ProductBatch } from "@/app/types/product";
 import { ProductDetailDrawer } from "./ProductDetailDrawer";
 
 interface BulkMovementItem {
@@ -23,6 +23,10 @@ interface BulkMovementItem {
   prescribedBy?: string;
   cieCode?: string;
   recipeNotes?: string;
+  specifyBatches?: boolean;
+  availableBatches?: ProductBatch[];
+  selectedBatches?: {batchId: string; quantity: number}[];
+  loadingBatches?: boolean;
 }
 
 interface WizardStep5Props {
@@ -34,6 +38,9 @@ interface WizardStep5Props {
   onRemoveItem: (productId: string) => void;
   onUpdateItemData: (productId: string, data: Partial<BulkMovementItem>) => void;
   itemsWithWarning: Set<string>;
+  onToggleSpecifyBatches?: (productId: string) => void;
+  onUpdateBatchQuantity?: (productId: string, batchId: string, quantity: number) => void;
+  onRemoveBatchSelection?: (productId: string, batchId: string) => void;
 }
 
 export function WizardStep5({
@@ -45,6 +52,9 @@ export function WizardStep5({
   onRemoveItem,
   onUpdateItemData,
   itemsWithWarning,
+  onToggleSpecifyBatches,
+  onUpdateBatchQuantity,
+  onRemoveBatchSelection,
 }: WizardStep5Props) {
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const itemsWithQuantity = items.filter((item) => item.quantity !== "" && item.quantity > 0);
@@ -177,6 +187,9 @@ export function WizardStep5({
             onUpdateItemData(editingProductId, data);
             setEditingProductId(null);
           }}
+          onToggleSpecifyBatches={onToggleSpecifyBatches}
+          onUpdateBatchQuantity={onUpdateBatchQuantity}
+          onRemoveBatchSelection={onRemoveBatchSelection}
         />
       )}
     </div>

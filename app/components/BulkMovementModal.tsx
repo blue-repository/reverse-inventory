@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Product, MovementType } from "@/app/types/product";
-import { recordBulkInventoryMovements, searchProducts } from "@/app/actions/products";
+import { Product, MovementType, ProductBatch } from "@/app/types/product";
+import { recordBulkInventoryMovements, searchProducts, getProductBatches, recordInventoryMovement } from "@/app/actions/products";
 import { useUser } from "@/app/context/UserContext";
 import { containsNormalized } from "@/app/lib/search-utils";
 import BarcodeScannerModal from "@/app/components/BarcodeScannerModal";
@@ -88,6 +88,11 @@ type BulkMovementItem = {
   prescribedBy?: string;
   cieCode?: string;
   recipeNotes?: string;
+  // Campos para selección de lotes en salidas
+  specifyBatches?: boolean;
+  availableBatches?: ProductBatch[];
+  selectedBatches?: {batchId: string; quantity: number}[];
+  loadingBatches?: boolean;
 };
 
 type BulkMovementModalProps = {
@@ -229,6 +234,64 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     };
   }, [searchQuery, products]);
 
+  // Cargar lotes disponibles para cada producto cuando es salida
+  useEffect(() => {
+    if (movementType === "salida") {
+      // Cargar lotes para cada producto en la lista
+      items.forEach(async (item) => {
+        if (!item.loadingBatches && !item.availableBatches) {
+          // Marcar como cargando
+          setItems((prev) =>
+            prev.map((i) =>
+              i.product.id === item.product.id
+                ? { ...i, loadingBatches: true }
+                : i
+            )
+          );
+
+          try {
+            const result = await getProductBatches(item.product.id);
+            const activeBatches = (result.data || []).filter(
+              (b) => b.stock > 0 && b.is_active
+            );
+
+            setItems((prev) =>
+              prev.map((i) =>
+                i.product.id === item.product.id
+                  ? {
+                      ...i,
+                      availableBatches: activeBatches,
+                      loadingBatches: false,
+                    }
+                  : i
+              )
+            );
+          } catch (error) {
+            console.error("Error loading batches:", error);
+            setItems((prev) =>
+              prev.map((i) =>
+                i.product.id === item.product.id
+                  ? { ...i, loadingBatches: false }
+                  : i
+              )
+            );
+          }
+        }
+      });
+    } else {
+      // Limpiar datos de lotes si no es salida
+      setItems((prev) =>
+        prev.map((item) => ({
+          ...item,
+          specifyBatches: false,
+          availableBatches: undefined,
+          selectedBatches: undefined,
+          loadingBatches: false,
+        }))
+      );
+    }
+  }, [movementType, items.length]);
+
   // Validar items cuando cambia el tipo de movimiento
   const validateItemsForMovementType = (type: MovementType, currentItems: BulkMovementItem[]) => {
     const warnings = new Set<string>();
@@ -279,6 +342,10 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           prescribedBy: "",
           cieCode: "",
           recipeNotes: "",
+          specifyBatches: false,
+          availableBatches: undefined,
+          selectedBatches: [],
+          loadingBatches: false,
         },
       ];
     });
@@ -308,6 +375,10 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
         prescribedBy: "",
         cieCode: "",
         recipeNotes: "",
+        specifyBatches: false,
+        availableBatches: undefined,
+        selectedBatches: [],
+        loadingBatches: false,
       },
     ]);
     setSearchQuery("");
@@ -322,9 +393,30 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   // Actualizar cantidad
   const updateItemQuantity = (productId: string, quantity: number | "") => {
     setItems((prev) =>
-      prev.map((item) =>
-        item.product.id === productId ? { ...item, quantity: quantity === "" ? "" : Math.max(0, quantity) } : item
-      )
+      prev.map((item) => {
+        if (item.product.id === productId) {
+          const newQuantity = quantity === "" ? "" : Math.max(0, quantity);
+          
+          // Si es único lote y specifyBatches está activo, actualizar automáticamente selectedBatches
+          if (
+            movementType === "salida" &&
+            item.specifyBatches &&
+            item.availableBatches &&
+            item.availableBatches.length === 1 &&
+            newQuantity !== "" &&
+            newQuantity > 0
+          ) {
+            return {
+              ...item,
+              quantity: newQuantity,
+              selectedBatches: [{ batchId: item.availableBatches[0].id, quantity: newQuantity }]
+            };
+          }
+          
+          return { ...item, quantity: newQuantity };
+        }
+        return item;
+      })
     );
     
     // Revalidar advertencias después de cambiar cantidad
@@ -505,6 +597,79 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     );
   };
 
+  // Funciones para manejar selección de lotes
+  const toggleSpecifyBatches = (productId: string) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.product.id === productId) {
+          const newSpecifyBatches = !item.specifyBatches;
+          
+          // Si se activa y hay un solo lote, auto-cargar con la cantidad total
+          if (newSpecifyBatches && item.availableBatches && item.availableBatches.length === 1 && item.quantity !== "") {
+            const qty = typeof item.quantity === "string" ? 0 : item.quantity;
+            if (qty > 0) {
+              return {
+                ...item,
+                specifyBatches: newSpecifyBatches,
+                selectedBatches: [{ batchId: item.availableBatches[0].id, quantity: qty }]
+              };
+            }
+          }
+          
+          // Si se desactiva, limpiar selecciones
+          return {
+            ...item,
+            specifyBatches: newSpecifyBatches,
+            selectedBatches: newSpecifyBatches ? item.selectedBatches : []
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  const updateBatchQuantity = (productId: string, batchId: string, quantity: number) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.product.id === productId) {
+          const selectedBatches = item.selectedBatches || [];
+          const exists = selectedBatches.find(s => s.batchId === batchId);
+          
+          if (exists) {
+            return {
+              ...item,
+              selectedBatches: selectedBatches.map(s =>
+                s.batchId === batchId ? { ...s, quantity } : s
+              )
+            };
+          } else {
+            if (quantity > 0) {
+              return {
+                ...item,
+                selectedBatches: [...selectedBatches, { batchId, quantity }]
+              };
+            }
+          }
+        }
+        return item;
+      })
+    );
+  };
+
+  const removeBatchSelection = (productId: string, batchId: string) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.product.id === productId) {
+          return {
+            ...item,
+            selectedBatches: (item.selectedBatches || []).filter(s => s.batchId !== batchId)
+          };
+        }
+        return item;
+      })
+    );
+  };
+
   // Guardar movimientos
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -558,6 +723,42 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
       return;
     }
 
+    // Validaciones para salidas con lotes específicos
+    if (movementType === "salida") {
+      for (const item of items) {
+        if (item.quantity === "" || item.quantity === 0) continue;
+        
+        if (item.specifyBatches && item.selectedBatches) {
+          if (item.selectedBatches.length === 0) {
+            setError(`Debes seleccionar al menos un lote para ${item.product.name}`);
+            return;
+          }
+          
+          const totalFromBatches = item.selectedBatches.reduce((sum, s) => sum + s.quantity, 0);
+          const qty = typeof item.quantity === "string" ? 0 : item.quantity;
+          
+          // Si hay 1 lote, debe ser igual al total
+          if (item.availableBatches && item.availableBatches.length === 1 && totalFromBatches !== qty) {
+            setError(`Con un solo lote disponible para ${item.product.name}, se debe retirar toda la cantidad (${qty} unidades) del lote.`);
+            return;
+          }
+          
+          // Si hay más de 1 lote, debe cuadrar exactamente
+          if (item.availableBatches && item.availableBatches.length > 1 && totalFromBatches !== qty) {
+            setError(`Para ${item.product.name}, la cantidad total de los lotes (${totalFromBatches}) debe coincidir con la cantidad a egresar (${qty})`);
+            return;
+          }
+          
+          // Validar que todas las cantidades sean mayores a 0
+          const hasZeroQuantity = item.selectedBatches.some(s => s.quantity <= 0);
+          if (hasZeroQuantity) {
+            setError(`Para ${item.product.name}, todos los lotes seleccionados deben tener una cantidad mayor a 0`);
+            return;
+          }
+        }
+      }
+    }
+
     setIsSubmitting(true);
     try {
       // Generar UUIDs
@@ -604,10 +805,55 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
             prescribed_by: isRecipeMovement ? (item.prescribedBy || generalPrescribedBy || "") : undefined,
             cie_code: isRecipeMovement ? (item.cieCode || generalCieCode || "") : undefined,
             recipe_notes: isRecipeMovement ? (item.recipeNotes || generalRecipeNotes || "") : undefined,
+            // Lotes específicos para salidas
+            specific_batches: (movementType === "salida" && item.specifyBatches && item.selectedBatches && item.selectedBatches.length > 0) 
+              ? item.selectedBatches 
+              : undefined,
           };
         });
 
-      await recordBulkInventoryMovements(movements);
+      if (movementType === "salida") {
+        // Siempre usar recordInventoryMovement para salidas (con o sin lotes especificos)
+        const salidaItems = items.filter(
+          (item) => item.quantity !== "" && item.quantity > 0
+        );
+
+        for (const item of salidaItems) {
+          const qty = typeof item.quantity === "string" ? 0 : item.quantity;
+          const itemReason = (item.useIndividualReason && item.reason)
+            ? item.reason
+            : (generalReason || "Sin especificar");
+          const isRecipeMovement = itemReason === "Entrega de receta";
+
+          const result = await recordInventoryMovement(
+            item.product.id,
+            movementType,
+            qty,
+            itemReason || undefined,
+            item.notes || generalNotes || undefined,
+            currentUser || undefined,
+            isRecipeMovement ? {
+              recipeCode: item.recipeCode || generalRecipeCode || undefined,
+              recipeDate: item.recipeDate || generalRecipeDate || undefined,
+              patientName: item.patientName || generalPatientName || undefined,
+              prescribedBy: item.prescribedBy || generalPrescribedBy || undefined,
+              cieCode: item.cieCode || generalCieCode || undefined,
+              recipeNotes: item.recipeNotes || generalRecipeNotes || undefined,
+            } : undefined,
+            (item.specifyBatches && item.selectedBatches && item.selectedBatches.length > 0)
+              ? item.selectedBatches
+              : undefined
+          );
+
+          if (!result.success) {
+            throw new Error(result.error || `Error al registrar movimiento para ${item.product.name}`);
+          }
+        }
+      } else {
+        if (movements.length > 0) {
+          await recordBulkInventoryMovements(movements);
+        }
+      }
 
       onSuccess?.();
       onClose();
@@ -876,6 +1122,9 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                     onRemoveItem={removeItem}
                     onUpdateItemData={updateItemData}
                     itemsWithWarning={itemsWithWarning}
+                    onToggleSpecifyBatches={toggleSpecifyBatches}
+                    onUpdateBatchQuantity={updateBatchQuantity}
+                    onRemoveBatchSelection={removeBatchSelection}
                   />
                 )}
               </div>
@@ -1419,6 +1668,104 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                             className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
                           />
                         </div>
+                      </div>
+                    )}
+                    
+                    {/* Selección de lotes para SALIDA */}
+                    {movementType === "salida" && item.availableBatches && item.availableBatches.length > 0 && (
+                      <div className="border-t border-slate-200 pt-2 space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={item.specifyBatches || false}
+                            onChange={() => toggleSpecifyBatches(item.product.id)}
+                            className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-[11px] font-semibold text-slate-700">
+                            Especificar lotes manualmente
+                          </span>
+                        </label>
+                        
+                        {item.specifyBatches && (
+                          <div className="space-y-1.5 bg-white p-2 rounded border border-slate-200">
+                            <p className="text-[10px] text-slate-600 mb-1.5">
+                              Selecciona de qué lotes tomar los productos:
+                            </p>
+                            {item.availableBatches.map((batch) => {
+                              const selectedBatch = item.selectedBatches?.find(s => s.batchId === batch.id);
+                              const isSelected = !!selectedBatch;
+                              const selectedQty = selectedBatch?.quantity;
+                              const isOnlyBatch = item.availableBatches?.length === 1;
+                              
+                              return (
+                                <div
+                                  key={batch.id}
+                                  className={`border rounded p-1.5 ${
+                                    isSelected ? "border-blue-500 bg-blue-50" : "border-slate-200"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <div className="flex-1">
+                                      <p className="text-[10px] font-semibold text-slate-700">
+                                        {batch.batch_number}
+                                      </p>
+                                      <p className="text-[9px] text-slate-600">
+                                        Vence: {batch.expiration_date} | Stock: {batch.stock}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={batch.stock}
+                                      value={selectedQty ?? ""}
+                                      onChange={(e) => {
+                                        const qty = parseInt(e.target.value) || 0;
+                                        if (qty > 0) {
+                                          updateBatchQuantity(item.product.id, batch.id, qty);
+                                        } else {
+                                          removeBatchSelection(item.product.id, batch.id);
+                                        }
+                                      }}
+                                      placeholder="Cantidad"
+                                      className="flex-1 rounded border border-slate-300 px-1.5 py-0.5 text-[11px]"
+                                      disabled={isOnlyBatch}
+                                      title={isOnlyBatch ? "Con un solo lote, se usa la cantidad total del producto" : ""}
+                                    />
+                                    {!isOnlyBatch && isSelected && (
+                                      <button
+                                        type="button"
+                                        onClick={() => removeBatchSelection(item.product.id, batch.id)}
+                                        className="text-red-600 hover:text-red-800 p-0.5"
+                                        title="Quitar este lote"
+                                      >
+                                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </div>
+                                  
+                                  {isOnlyBatch && (
+                                    <p className="text-[9px] text-blue-600 mt-0.5">
+                                      ℹ️ Único lote - usa cantidad del producto
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            
+                            {item.selectedBatches && item.selectedBatches.length > 0 && (
+                              <div className="border-t border-slate-200 pt-1.5 mt-1.5">
+                                <p className="text-[10px] font-semibold text-slate-700">
+                                  Total de lotes: {item.selectedBatches.reduce((sum, s) => sum + s.quantity, 0)} unidades
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                     
