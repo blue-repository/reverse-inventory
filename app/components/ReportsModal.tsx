@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef } from "react";
 import React from "react";
+import ReportBatchesModal, { ReportBatch } from "./ReportBatchesModal";
 
 interface ReportData {
   [key: string]: any;
+  lotes?: ReportBatch[];
 }
 
 interface ReportSummary {
@@ -34,6 +36,9 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [useTodayFilter, setUseTodayFilter] = useState(false);
+  const [showBatchesModal, setShowBatchesModal] = useState(false);
+  const [selectedBatches, setSelectedBatches] = useState<ReportBatch[]>([]);
+  const [selectedProductName, setSelectedProductName] = useState("");
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,6 +75,18 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Escuchar ESC solo cuando el modal de lotes no está abierto
+  useEffect(() => {
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && isOpen && !showBatchesModal) {
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleEscapeKey);
+    return () => document.removeEventListener("keydown", handleEscapeKey);
+  }, [isOpen, onClose, showBatchesModal]);
+
   const toggleRow = (index: number) => {
     const newExpanded = new Set(expandedRows);
     if (newExpanded.has(index)) {
@@ -78,6 +95,13 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       newExpanded.add(index);
     }
     setExpandedRows(newExpanded);
+  };
+
+  const handleShowBatches = (batches: ReportBatch[] | undefined, productName: string) => {
+    if (!batches) return;
+    setSelectedBatches(batches);
+    setSelectedProductName(productName);
+    setShowBatchesModal(true);
   };
 
   const handleGenerateReport = async () => {
@@ -125,10 +149,16 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       return;
     }
 
-    const headers = Object.keys(reportData[0]);
-    let csv = headers.join(";") + "\n";
+    // Columnas base (sin incluir lotes directamente)
+    const baseHeaders = Object.keys(reportData[0]).filter(key => key !== 'lotes');
+    let csv = "";
+
+    // Crear CSV con dos secciones: datos principales y lotes detallados
+    csv += "DATOS PRINCIPALES\n";
+    csv += baseHeaders.join(";") + "\n";
+    
     reportData.forEach((row) => {
-      const values = headers.map((header) => {
+      const values = baseHeaders.map((header) => {
         const value = row[header];
         if (value === null || value === undefined) {
           return "";
@@ -144,6 +174,35 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
         return stringValue;
       });
       csv += values.join(";") + "\n";
+    });
+
+    // Agregar sección de lotes
+    csv += "\n\nDETALLE DE LOTES\n";
+    csv += "Producto;Lote;Stock Actual;Stock Inicial;Vencimiento;Estante;Cajón;Sección;Notas Ubicación\n";
+    
+    reportData.forEach((row) => {
+      if (row.lotes && row.lotes.length > 0) {
+        row.lotes.forEach((batch: ReportBatch) => {
+          const batchRow = [
+            row.producto,
+            batch.batch_number,
+            batch.stock,
+            batch.initial_stock,
+            new Date(batch.expiration_date).toLocaleDateString("es-EC"),
+            batch.shelf || "",
+            batch.drawer || "",
+            batch.section || "",
+            batch.location_notes || "",
+          ];
+          csv += batchRow.map((val) => {
+            const stringVal = String(val);
+            if (stringVal.includes(";") || stringVal.includes('"') || stringVal.includes("\n")) {
+              return `"${stringVal.replace(/"/g, '""')}"`;
+            }
+            return stringVal;
+          }).join(";") + "\n";
+        });
+      }
     });
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -172,19 +231,21 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       const ExcelJS = (await import('exceljs')).default;
 
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet(reportType === 'egresos' ? 'Egresos' : 'Ingresos');
-
+      
+      // Hoja principal con datos
+      const mainSheet = workbook.addWorksheet(reportType === 'egresos' ? 'Egresos' : 'Ingresos');
       const columns = reportType === "egresos" ? egressColumns : ingressColumns;
 
-      // Configurar columnas
-      worksheet.columns = columns.map(col => ({
+      // Configurar columnas (sin la columna lotes)
+      const mainColumns = columns.filter(col => col.key !== 'lote');
+      mainSheet.columns = mainColumns.map(col => ({
         header: col.label,
         key: col.key,
         width: 15
       }));
 
       // Estilo del header
-      worksheet.getRow(1).eachCell((cell) => {
+      mainSheet.getRow(1).eachCell((cell) => {
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
@@ -209,8 +270,8 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
 
       // Agregar datos con estilo alternado
       reportData.forEach((row, index) => {
-        const excelRow = worksheet.addRow(
-          columns.reduce((acc, col) => {
+        const excelRow = mainSheet.addRow(
+          mainColumns.reduce((acc, col) => {
             acc[col.key] = row[col.key] ?? '';
             return acc;
           }, {} as any)
@@ -242,8 +303,97 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
         });
       });
 
-      // Ajustar altura de filas
-      worksheet.getRow(1).height = 25;
+      mainSheet.getRow(1).height = 25;
+
+      // Crear hoja de lotes
+      const batchSheet = workbook.addWorksheet('Detalle de Lotes');
+      
+      const batchColumns = [
+        { header: 'Producto', key: 'producto', width: 25 },
+        { header: 'Lote', key: 'batch_number', width: 20 },
+        { header: 'Stock Actual', key: 'stock', width: 12 },
+        { header: 'Stock Inicial', key: 'initial_stock', width: 12 },
+        { header: 'Vencimiento', key: 'expiration_date', width: 15 },
+        { header: 'Estante', key: 'shelf', width: 12 },
+        { header: 'Cajón', key: 'drawer', width: 12 },
+        { header: 'Sección', key: 'section', width: 12 },
+        { header: 'Notas Ubicación', key: 'location_notes', width: 25 },
+      ];
+
+      batchSheet.columns = batchColumns;
+
+      // Estilo header de lotes
+      batchSheet.getRow(1).eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF059669' } // green-600
+        };
+        cell.font = {
+          color: { argb: 'FFFFFFFF' },
+          bold: true,
+          size: 11
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: 'center'
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF10B981' } },
+          left: { style: 'thin', color: { argb: 'FF10B981' } },
+          bottom: { style: 'thin', color: { argb: 'FF10B981' } },
+          right: { style: 'thin', color: { argb: 'FF10B981' } }
+        };
+      });
+
+      // Agregar lotes
+      let batchIndex = 0;
+      reportData.forEach((row) => {
+        if (row.lotes && row.lotes.length > 0) {
+          row.lotes.forEach((batch: ReportBatch) => {
+            const batchRow = batchSheet.addRow({
+              producto: row.producto,
+              batch_number: batch.batch_number,
+              stock: batch.stock,
+              initial_stock: batch.initial_stock,
+              expiration_date: new Date(batch.expiration_date).toLocaleDateString("es-EC"),
+              shelf: batch.shelf || "",
+              drawer: batch.drawer || "",
+              section: batch.section || "",
+              location_notes: batch.location_notes || "",
+            });
+
+            const bgColor = batchIndex % 2 === 0 ? 'FFFFFFFF' : 'FFF0FDF4'; // blanco / green-50
+
+            batchRow.eachCell((cell) => {
+              cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: bgColor }
+              };
+              cell.font = {
+                size: 10,
+                color: { argb: 'FF1E293B' }
+              };
+              cell.alignment = {
+                vertical: 'middle',
+                horizontal: 'left',
+                wrapText: true
+              };
+              cell.border = {
+                top: { style: 'thin', color: { argb: 'FFD1FAE5' } },
+                left: { style: 'thin', color: { argb: 'FFD1FAE5' } },
+                bottom: { style: 'thin', color: { argb: 'FFD1FAE5' } },
+                right: { style: 'thin', color: { argb: 'FFD1FAE5' } }
+              };
+            });
+
+            batchIndex++;
+          });
+        }
+      });
+
+      batchSheet.getRow(1).height = 25;
 
       // Generar y descargar archivo
       const buffer = await workbook.xlsx.writeBuffer();
@@ -281,11 +431,13 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       });
 
       const columns = reportType === "egresos" ? egressColumns : ingressColumns;
-      const headers = columns.map(col => col.label);
+      const mainColumns = columns.filter(col => col.key !== 'lote');
+      const headers = mainColumns.map(col => col.label);
       const data = reportData.map(row => 
-        columns.map(col => row[col.key] ?? '')
+        mainColumns.map(col => row[col.key] ?? '')
       );
 
+      // Página 1: Datos principales
       // Título
       doc.setFontSize(14);
       doc.text(`Reporte de ${reportType === 'egresos' ? 'Egresos' : 'Ingresos'}`, 14, 15);
@@ -316,6 +468,54 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
         },
         margin: { top: 32, right: 8, bottom: 8, left: 8 },
       });
+
+      // Página 2: Detalle de lotes (si existen)
+      const batchesData: any[] = [];
+      reportData.forEach((row) => {
+        if (row.lotes && row.lotes.length > 0) {
+          row.lotes.forEach((batch: ReportBatch) => {
+            batchesData.push([
+              row.producto,
+              batch.batch_number,
+              batch.stock,
+              batch.initial_stock,
+              new Date(batch.expiration_date).toLocaleDateString("es-EC"),
+              batch.shelf || "-",
+              batch.drawer || "-",
+              batch.section || "-",
+              batch.location_notes || "-",
+            ]);
+          });
+        }
+      });
+
+      if (batchesData.length > 0) {
+        doc.addPage();
+        doc.setFontSize(14);
+        doc.text("Detalle de Lotes", 14, 15);
+        doc.setFontSize(9);
+        doc.text(`Total lotes: ${batchesData.length}`, 14, 22);
+
+        autoTable(doc, {
+          head: [["Producto", "Lote", "Stock Act.", "Stock Inic.", "Vencimiento", "Estante", "Cajón", "Sección", "Notas"]],
+          body: batchesData,
+          startY: 27,
+          styles: {
+            fontSize: 7,
+            cellPadding: 1.5,
+          },
+          headStyles: {
+            fillColor: [5, 150, 105],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 7,
+          },
+          alternateRowStyles: {
+            fillColor: [240, 253, 244],
+          },
+          margin: { top: 27, right: 8, bottom: 8, left: 8 },
+        });
+      }
 
       doc.save(`reporte-${reportType}-${new Date().toISOString().split('T')[0]}.pdf`);
       setShowExportMenu(false);
@@ -379,8 +579,17 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2 sm:p-4">
-      <div className="bg-white rounded-lg shadow-2xl w-full h-full sm:h-[96vh] max-w-[98%] flex flex-col overflow-hidden">
+    <div 
+      className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2 sm:p-4"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+    >
+      <div 
+        className="bg-white rounded-lg shadow-2xl w-full h-full sm:h-[96vh] max-w-[98%] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 flex-shrink-0">
           <div>
@@ -660,7 +869,24 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                                 colIdx < mainColumns.length - 1 ? 'border-r border-slate-200' : ''
                               } ${col.key === 'producto' ? 'font-semibold text-slate-900' : ''}`}
                             >
-                              {row[col.key] || "-"}
+                              {col.key === 'lote' && row.lotes && row.lotes.length > 0 ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleShowBatches(row.lotes, row.producto);
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-colors font-semibold text-xs"
+                                  title="Ver lotes disponibles"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                                  <span>{row.lotes.length} lote{row.lotes.length > 1 ? 's' : ''}</span>
+                                </button>
+                              ) : (
+                                row[col.key] || "-"
+                              )}
                             </td>
                           ))}
                         </tr>
@@ -736,6 +962,14 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
           )}
         </div>
       </div>
+
+      {/* Modal de Lotes */}
+      <ReportBatchesModal
+        isOpen={showBatchesModal}
+        onClose={() => setShowBatchesModal(false)}
+        batches={selectedBatches}
+        productName={selectedProductName}
+      />
     </div>
   );
 }

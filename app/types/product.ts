@@ -74,6 +74,65 @@ export type InventoryMovement = {
   updated_at: string;
 };
 
+// ⭐ NUEVO: Detalle de lotes afectados por un movimiento
+export type MovementBatchDetail = {
+  id: string;
+  movement_id: string;
+  batch_id: string;
+  quantity: number;
+  batch_stock_before: number;
+  batch_stock_after: number;
+  created_at: string;
+};
+
+// ⭐ NUEVO: Movimiento con información de lotes (de la vista)
+export type MovementWithBatchDetails = {
+  movement_id: string;
+  product_id: string;
+  product_name: string;
+  movement_type: MovementType;
+  total_quantity: number;
+  reason?: string | null;
+  notes?: string | null;
+  movement_date: string;
+  recorded_by?: string | null;
+  // Detalles del lote (puede ser null si no hay lotes asociados)
+  detail_id?: string | null;
+  batch_id?: string | null;
+  batch_number?: string | null;
+  batch_quantity?: number | null;
+  batch_stock_before?: number | null;
+  batch_stock_after?: number | null;
+  batch_expiration_date?: string | null;
+  shelf?: string | null;
+  drawer?: string | null;
+  section?: string | null;
+};
+
+// ⭐ NUEVO: Resultado de la función get_movement_batch_breakdown
+export type MovementBatchBreakdown = {
+  batch_id: string;
+  batch_number: string;
+  quantity: number;
+  stock_before: number;
+  stock_after: number;
+  expiration_date: string;
+  location: string;
+};
+
+// ⭐ NUEVO: Resultado de la función get_batch_movement_history
+export type BatchMovementHistory = {
+  movement_id: string;
+  movement_type: MovementType;
+  movement_date: string;
+  quantity: number;
+  stock_before: number;
+  stock_after: number;
+  product_name: string;
+  recorded_by: string;
+  reason?: string | null;
+};
+
 export type ProductStockSummary = {
   id: string;
   name: string;

@@ -67,12 +67,38 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Obtener lotes asociados a los productos
+    const { data: batches, error: batchError } = await supabase
+      .from("product_batches")
+      .select("*")
+      .in("product_id", productIds)
+      .eq("is_active", true);
+
+    if (batchError) {
+      console.error("Error al obtener lotes:", batchError);
+      return NextResponse.json(
+        { error: "Error al obtener lotes" },
+        { status: 500 }
+      );
+    }
+
     // Mapear productos por ID
     const productMap = new Map(products?.map((p) => [p.id, p]) || []);
+    
+    // Mapear lotes por product_id
+    const batchesByProductId = new Map<string, typeof batches>();
+    batches?.forEach((batch) => {
+      if (!batchesByProductId.has(batch.product_id)) {
+        batchesByProductId.set(batch.product_id, []);
+      }
+      batchesByProductId.get(batch.product_id)?.push(batch);
+    });
 
     // Combinar datos
     const reportData = movements.map((movement) => {
       const product = productMap.get(movement.product_id);
+      const productBatches = batchesByProductId.get(movement.product_id) || [];
+      
       return {
         id: movement.id,
         fecha: new Date(movement.created_at).toLocaleDateString("es-EC"),
@@ -84,6 +110,7 @@ export async function GET(request: NextRequest) {
         cantidad: movement.quantity,
         unidad: movement.reporting_unit || "unidad",
         lote: movement.batch_number || "-",
+        lotes: productBatches,
         motivo: movement.reason || "-",
         notas: movement.notes || "-",
         // Campos de receta

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Product, MovementType } from "@/app/types/product";
-import { recordInventoryMovement, createBatch } from "@/app/actions/products";
+import { useState, useEffect } from "react";
+import { Product, MovementType, ProductBatch } from "@/app/types/product";
+import { recordInventoryMovement, createBatch, getProductBatches } from "@/app/actions/products";
 import { useUser } from "@/app/context/UserContext";
 
 type InventoryMovementModalProps = {
@@ -82,6 +82,20 @@ export default function InventoryMovementModal({
   const [section, setSection] = useState<string>("");
   const [locationNotes, setLocationNotes] = useState<string>("");
   
+  // Campos para receta médica (salida con "Entrega de receta")
+  const [recipeCode, setRecipeCode] = useState<string>("");
+  const [recipeDate, setRecipeDate] = useState<string>("");
+  const [patientName, setPatientName] = useState<string>("");
+  const [prescribedBy, setPrescribedBy] = useState<string>("");
+  const [cieCode, setCieCode] = useState<string>("");
+  const [recipeNotes, setRecipeNotes] = useState<string>("");
+  
+  // Campos para selección de lotes en salidas
+  const [specifyBatches, setSpecifyBatches] = useState<boolean>(false);
+  const [availableBatches, setAvailableBatches] = useState<ProductBatch[]>([]);
+  const [selectedBatches, setSelectedBatches] = useState<{batchId: string; quantity: number}[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState<boolean>(false);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,6 +107,36 @@ export default function InventoryMovementModal({
       .padStart(3, "0");
     setBatchNumber(`LOTE-${dateStr}-${random}`);
   };
+
+  // Cargar lotes disponibles cuando es salida
+  useEffect(() => {
+    if (movementType === "salida") {
+      setLoadingBatches(true);
+      getProductBatches(product.id).then((result) => {
+        const activeBatches = (result.data || []).filter(b => b.stock > 0 && b.is_active);
+        setAvailableBatches(activeBatches);
+        setLoadingBatches(false);
+      });
+    } else {
+      setAvailableBatches([]);
+      setSpecifyBatches(false);
+      setSelectedBatches([]);
+    }
+  }, [movementType, product.id]);
+
+  // Cerrar modal con tecla ESC
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
 
   const reasons = MOVEMENT_REASONS[movementType];
 
@@ -106,8 +150,37 @@ export default function InventoryMovementModal({
       return;
     }
 
-    // Validar que hay suficiente stock para salidas
-    if (movementType === "salida" && product.stock < qty) {
+    // Validaciones para salidas con lotes específicos
+    if (movementType === "salida" && specifyBatches) {
+      if (selectedBatches.length === 0) {
+        setError("Debes seleccionar al menos un lote");
+        return;
+      }
+      
+      const totalFromBatches = selectedBatches.reduce((sum, s) => sum + s.quantity, 0);
+      
+      // Si hay 1 lote, debe ser igual al total (no se permite modificación)
+      if (availableBatches.length === 1 && totalFromBatches !== qty) {
+        setError(`Con un solo lote disponible, se debe retirar toda la cantidad (${qty} unidades) del lote. No se permite modificar.`);
+        return;
+      }
+      
+      // Si hay más de 1 lote, debe cuadrar exactamente
+      if (availableBatches.length > 1 && totalFromBatches !== qty) {
+        setError(`Con múltiples lotes, la cantidad total de los lotes (${totalFromBatches}) debe coincidir con la cantidad a egresar (${qty})`);
+        return;
+      }
+      
+      // Validar que todas las cantidades seleccionadas sean mayores a 0
+      const hasZeroQuantity = selectedBatches.some(s => s.quantity <= 0);
+      if (hasZeroQuantity) {
+        setError("Todos los lotes seleccionados deben tener una cantidad mayor a 0");
+        return;
+      }
+    }
+
+    // Validar que hay suficiente stock para salidas (solo si no se especifican lotes)
+    if (movementType === "salida" && !specifyBatches && product.stock < qty) {
       setError(`Stock insuficiente. Disponible: ${product.stock}`);
       return;
     }
@@ -164,13 +237,27 @@ export default function InventoryMovementModal({
         }
       } else {
         // Para salidas y ajustes, registrar movimiento normal
+        // Si es una entrega de receta, incluir los datos adicionales
+        const isRecipeMovement = movementType === "salida" && reason === "Entrega de receta";
+        
         const result = await recordInventoryMovement(
           product.id as string,
           movementType,
           qty,
           reason || undefined,
           notes || undefined,
-          currentUser || undefined
+          currentUser || undefined,
+          // Campos adicionales para recetas
+          isRecipeMovement ? {
+            recipeCode: recipeCode || undefined,
+            recipeDate: recipeDate || undefined,
+            patientName: patientName || undefined,
+            prescribedBy: prescribedBy || undefined,
+            cieCode: cieCode || undefined,
+            recipeNotes: recipeNotes || undefined,
+          } : undefined,
+          // Lotes específicos para salidas
+          specifyBatches && selectedBatches.length > 0 ? selectedBatches : undefined
         );
 
         if (!result.success) {
@@ -189,6 +276,14 @@ export default function InventoryMovementModal({
       setDrawer("");
       setSection("");
       setLocationNotes("");
+      setRecipeCode("");
+      setRecipeDate("");
+      setPatientName("");
+      setPrescribedBy("");
+      setCieCode("");
+      setRecipeNotes("");
+      setSpecifyBatches(false);
+      setSelectedBatches([]);
       
       onSuccess?.();
       onClose();
@@ -465,6 +560,92 @@ export default function InventoryMovementModal({
                   </select>
                 </div>
 
+                {/* Campos de receta médica (solo para salidas con "Entrega de receta") */}
+                {movementType === "salida" && reason === "Entrega de receta" && (
+                  <CollapsibleSection title="Información de Receta Médica" icon="📋" defaultOpen={true}>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                        <div>
+                          <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                            Código de Receta
+                          </label>
+                          <input
+                            type="text"
+                            value={recipeCode}
+                            onChange={(e) => setRecipeCode(e.target.value)}
+                            placeholder="Ej: REC-2024-001"
+                            className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                            Fecha de Receta
+                          </label>
+                          <input
+                            type="date"
+                            value={recipeDate}
+                            onChange={(e) => setRecipeDate(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                          Nombre del Paciente
+                        </label>
+                        <input
+                          type="text"
+                          value={patientName}
+                          onChange={(e) => setPatientName(e.target.value)}
+                          placeholder="Nombre completo del paciente"
+                          className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                          Prescrito por (Médico)
+                        </label>
+                        <input
+                          type="text"
+                          value={prescribedBy}
+                          onChange={(e) => setPrescribedBy(e.target.value)}
+                          placeholder="Nombre del médico"
+                          className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                          Código CIE
+                        </label>
+                        <input
+                          type="text"
+                          value={cieCode}
+                          onChange={(e) => setCieCode(e.target.value)}
+                          placeholder="Código de diagnóstico CIE-10"
+                          className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
+                          Notas de Receta
+                        </label>
+                        <textarea
+                          value={recipeNotes}
+                          onChange={(e) => setRecipeNotes(e.target.value)}
+                          placeholder="Observaciones adicionales de la receta..."
+                          rows={2}
+                          className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                        />
+                      </div>
+                    </div>
+                  </CollapsibleSection>
+                )}
+
                 <div>
                   <label className="mb-1 block text-xs sm:text-sm font-medium text-slate-700">
                     Notas (Opcional)
@@ -493,19 +674,123 @@ export default function InventoryMovementModal({
               </div>
             </div>
 
-            {/* Información sobre lotes para entradas y salidas */}
-            {(movementType === "entrada" || movementType === "salida") && (
+            {/* Información sobre lotes para entradas */}
+            {movementType === "entrada" && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-2.5 sm:p-3 text-xs sm:text-sm">
-                {movementType === "entrada" ? (
-                  <div>
-                    <p className="font-semibold text-blue-900 mb-1">📦 Crear nuevo lote</p>
-                    <p className="text-blue-700">Este ingreso creará un nuevo lote con los datos especificados arriba.</p>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="font-semibold text-blue-900 mb-1">📤 Salida de inventario</p>
-                    <p className="text-blue-700">El sistema utilizará el método FEFO (First Expired, First Out). Se utilizarán primero los lotes que vencen antes.</p>
-                  </div>
+                <p className="font-semibold text-blue-900 mb-1">📦 Crear nuevo lote</p>
+                <p className="text-blue-700">Este ingreso creará un nuevo lote con los datos especificados arriba.</p>
+              </div>
+            )}
+
+            {/* Especificar lotes para salidas */}
+            {movementType === "salida" && availableBatches.length > 0 && (
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={specifyBatches}
+                    onChange={(e) => {
+                      setSpecifyBatches(e.target.checked);
+                      if (e.target.checked && availableBatches.length === 1 && quantity) {
+                        // Si hay un solo lote, auto-cargar con la cantidad total (no se puede editar)
+                        const qty = parseInt(quantity);
+                        if (qty > 0) {
+                          setSelectedBatches([{ batchId: availableBatches[0].id, quantity: qty }]);
+                        }
+                      } else if (!e.target.checked) {
+                        setSelectedBatches([]);
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-xs sm:text-sm font-medium text-slate-700">
+                    Especificar lotes manualmente
+                  </span>
+                </label>
+                
+                {specifyBatches && (
+                  <CollapsibleSection title="Seleccionar Lotes" icon="📦" defaultOpen={true}>
+                    <div className="space-y-2">
+                      <p className="text-xs text-slate-600 mb-2">
+                        Selecciona de qué lote(s) se tomarán los productos:
+                      </p>
+                      {availableBatches.map((batch) => {
+                        const batchSelection = selectedBatches.find(s => s.batchId === batch.id);
+                        const isSelected = !!batchSelection;
+                        
+                        return (
+                          <div key={batch.id} className="border border-slate-200 rounded-lg p-2 bg-white">
+                            <label className="flex items-start gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedBatches([...selectedBatches, { batchId: batch.id, quantity: 0 }]);
+                                  } else {
+                                    setSelectedBatches(selectedBatches.filter(s => s.batchId !== batch.id));
+                                  }
+                                }}
+                                className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-semibold text-slate-900">{batch.batch_number}</span>
+                                  <span className="text-xs text-slate-600">Stock: {batch.stock}</span>
+                                </div>
+                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                  Vence: {new Date(batch.expiration_date).toLocaleDateString("es-EC")}
+                                  {batch.shelf && ` • Estante: ${batch.shelf}`}
+                                  {batch.drawer && ` • Cajón: ${batch.drawer}`}
+                                </div>
+                                {isSelected && (
+                                  <div className="mt-2">
+                                    {availableBatches.length === 1 ? (
+                                      <div className="text-[11px] text-slate-600 bg-slate-50 rounded px-2 py-1.5 border border-slate-200">
+                                        <p className="font-medium text-slate-700 mb-1">Cantidad de este lote:</p>
+                                        <p className="text-slate-900 font-semibold">{batchSelection?.quantity || 0} unidades (automático)</p>
+                                        <p className="text-slate-500 text-[10px] mt-1">Se retirará toda la cantidad del único lote disponible</p>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <label className="text-[11px] text-slate-600 block mb-1">Cantidad de este lote:</label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max={batch.stock}
+                                          value={batchSelection?.quantity || 0}
+                                          onChange={(e) => {
+                                            const newQuantity = parseInt(e.target.value) || 0;
+                                            setSelectedBatches(
+                                              selectedBatches.map(s => 
+                                                s.batchId === batch.id 
+                                                  ? { ...s, quantity: Math.min(newQuantity, batch.stock) } 
+                                                  : s
+                                              )
+                                            );
+                                          }}
+                                          className="w-full rounded border border-slate-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                          placeholder="0"
+                                        />
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </label>
+                          </div>
+                        );
+                      })}
+                      
+                      {selectedBatches.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-slate-200">
+                          <p className="text-xs font-semibold text-slate-700">
+                            Total seleccionado: {selectedBatches.reduce((sum, s) => sum + s.quantity, 0)} unidades
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleSection>
                 )}
               </div>
             )}

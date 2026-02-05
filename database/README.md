@@ -2,19 +2,44 @@
 
 Este directorio contiene todas las migraciones, queries y documentación relacionadas con la base de datos.
 
+## 🆕 Última Actualización: Sistema de Rastreo de Lotes
+
+**Nueva funcionalidad** que permite rastrear exactamente qué lotes fueron afectados por cada movimiento de inventario.
+
+📖 **Guía rápida:** [COMPLETE_SOLUTION_SUMMARY.md](./migrations/COMPLETE_SOLUTION_SUMMARY.md)
+
+**Archivos principales:**
+- `migrations/006_create_movement_batch_details.sql` - Script de migración
+- `migrations/MIGRATION_006_GUIDE.md` - Guía de ejecución paso a paso
+- `queries/movement_batch_tracking_queries.sql` - Queries de ejemplo
+- `migrations/SCHEMA_BATCH_TRACKING.md` - Documentación técnica completa
+
+---
+
 ## 📁 Estructura de Carpetas
 
 ```
 database/
 ├── migrations/                 # Migraciones SQL
-│   └── 001_add_categories_and_specialties.sql
+│   ├── 000_create_helper_functions.sql
+│   ├── 001_create_tables.sql
+│   ├── 001_add_categories_and_specialties.sql
+│   ├── 002_create_indexes.sql
+│   ├── 003_create_triggers.sql
+│   ├── 004_create_views.sql
+│   ├── 005_query_examples.sql
+│   ├── 006_create_movement_batch_details.sql ⭐ NUEVO
+│   ├── MIGRATION_006_GUIDE.md ⭐ NUEVO
+│   ├── SCHEMA_BATCH_TRACKING.md ⭐ NUEVO
+│   └── COMPLETE_SOLUTION_SUMMARY.md ⭐ NUEVO
 ├── queries/                   # Queries útiles
-│   └── useful_queries.sql
+│   ├── useful_queries.sql
+│   ├── recipe_movements_queries.sql
+│   └── movement_batch_tracking_queries.sql ⭐ NUEVO
 ├── examples/                  # Ejemplos y datos de prueba
 │   └── data_assignment_examples.sql
-├── MIGRATION_INSTRUCTIONS.md  # Instrucciones paso a paso
-├── CHANGES_SUMMARY.md         # Resumen visual de cambios
-└── README.md                  # Este archivo
+├── Documentación de migraciones anteriores
+└── README.md (este archivo)
 ```
 
 ## 🚀 Inicio Rápido
