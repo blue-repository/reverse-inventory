@@ -7,6 +7,8 @@ type ProductsTableProps = {
   initialPageSize: number;
   totalCount: number;
   currentPage: number;
+  allCategories?: string[];
+  allSpecialties?: string[];
 };
 
 export default function ProductsTable({
@@ -15,6 +17,8 @@ export default function ProductsTable({
   initialPageSize,
   totalCount,
   currentPage,
+  allCategories = [],
+  allSpecialties = [],
 }: ProductsTableProps) {
   return (
     <ClientTableWrapper
@@ -23,6 +27,8 @@ export default function ProductsTable({
       initialPageSize={initialPageSize}
       totalCount={totalCount}
       currentPage={currentPage}
+      allCategories={allCategories}
+      allSpecialties={allSpecialties}
     />
   );
 }

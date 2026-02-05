@@ -4,7 +4,16 @@ import { useTheme, rgbToString } from "@/app/context/ThemeContext";
 import ProductsTableClient, { type ProductsTableClientProps } from "@/app/components/ProductsTableClient";
 import { useEffect, useState } from "react";
 
-export default function ClientTableWrapper(props: ProductsTableClientProps) {
+type ClientTableWrapperProps = ProductsTableClientProps & {
+  allCategories?: string[];
+  allSpecialties?: string[];
+};
+
+export default function ClientTableWrapper({
+  allCategories = [],
+  allSpecialties = [],
+  ...props
+}: ClientTableWrapperProps) {
   const { colors } = useTheme();
   const [isDarkMode, setIsDarkMode] = useState(false);
 
@@ -24,7 +33,7 @@ export default function ClientTableWrapper(props: ProductsTableClientProps) {
       style={bgTableStyle} 
       className={`rounded-lg transition-colors duration-300 ${isDarkMode ? "dark-mode" : ""}`}
     >
-      <ProductsTableClient {...props} />
+      <ProductsTableClient {...props} allCategories={allCategories} allSpecialties={allSpecialties} />
     </div>
   );
 }

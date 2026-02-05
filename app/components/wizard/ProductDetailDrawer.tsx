@@ -12,7 +12,7 @@ const MOVEMENT_REASONS: Record<MovementType, string[]> = {
 
 interface BulkMovementItem {
   product: Product;
-  quantity: number;
+  quantity: number | "";
   reason: string;
   notes: string;
   useIndividualReason: boolean;

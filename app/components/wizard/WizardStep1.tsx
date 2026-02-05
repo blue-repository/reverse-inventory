@@ -2,9 +2,9 @@
 
 import { Product, MovementType } from "@/app/types/product";
 
-interface BulkMovementItem {
+interface WizardStep1Item {
   product: Product;
-  quantity: number;
+  quantity: number | "";
 }
 
 interface WizardStep1Props {
@@ -17,7 +17,7 @@ interface WizardStep1Props {
   onAddProduct: (product: Product) => void;
   onShowScanner: () => void;
   itemIds: Set<string>;
-  items: BulkMovementItem[];
+  items: WizardStep1Item[];
   onRemoveItem: (productId: string) => void;
 }
 

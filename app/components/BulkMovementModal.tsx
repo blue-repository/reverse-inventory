@@ -69,7 +69,7 @@ function CollapsibleSection({
 
 type BulkMovementItem = {
   product: Product;
-  quantity: number;
+  quantity: number | "";
   reason: string;
   notes: string;
    useIndividualReason: boolean;
@@ -241,7 +241,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           warnings.add(item.product.id);
         }
         // Cantidad mayor al stock disponible
-        else if (item.quantity > item.product.stock) {
+        else if (item.quantity !== "" && item.quantity > item.product.stock) {
           warnings.add(item.product.id);
         }
       });
@@ -262,7 +262,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
         ...prev,
         {
           product,
-          quantity: 0,
+          quantity: "",
           reason: "",
           notes: "",
            useIndividualReason: false,
@@ -291,7 +291,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
       ...prev,
       {
         product,
-        quantity: 0,
+        quantity: "",
         reason: "",
         notes: "",
         useIndividualReason: false,
@@ -320,10 +320,10 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
   };
 
   // Actualizar cantidad
-  const updateItemQuantity = (productId: string, quantity: number) => {
+  const updateItemQuantity = (productId: string, quantity: number | "") => {
     setItems((prev) =>
       prev.map((item) =>
-        item.product.id === productId ? { ...item, quantity: Math.max(0, quantity) } : item
+        item.product.id === productId ? { ...item, quantity: quantity === "" ? "" : Math.max(0, quantity) } : item
       )
     );
     
@@ -516,7 +516,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     }
 
     // Validar que al menos un producto tenga cantidad
-    const hasQuantities = items.some((item) => item.quantity > 0);
+    const hasQuantities = items.some((item) => item.quantity !== "" && item.quantity > 0);
     if (!hasQuantities) {
       setError("Debe ingresar al menos una cantidad");
       return;
@@ -531,7 +531,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     // Para entradas, validar que tengan datos de lote
     if (movementType === "entrada") {
       const invalidEntries = items.filter((item) => {
-        if (item.quantity === 0) return false;
+        if (item.quantity === "" || item.quantity === 0) return false;
         
         // Determinar qué valores usar: individuales o generales
         const batchNumber = item.batchNumber || generalBatchNumber;
@@ -551,7 +551,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
 
     // Motivo requerido cuando se habilita motivo individual
     const missingIndividualReasons = items.some(
-      (item) => item.quantity > 0 && item.useIndividualReason && !(item.reason && item.reason.trim())
+      (item) => item.quantity !== "" && item.quantity > 0 && item.useIndividualReason && !(item.reason && item.reason.trim())
     );
     if (missingIndividualReasons) {
       setError("Debes seleccionar un motivo para cada producto con motivo individual habilitado");
@@ -567,7 +567,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
 
       // Procesar cada movimiento
       const movements = items
-        .filter((item) => item.quantity > 0)
+        .filter((item) => item.quantity !== "" && item.quantity > 0)
         .map((item) => {
            const itemReason = (item.useIndividualReason && item.reason) ? item.reason : (generalReason || "Sin especificar");
           const isRecipeMovement = itemReason === "Entrega de receta";
@@ -579,7 +579,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           
           return {
             product_id: item.product.id,
-            quantity: item.quantity,
+            quantity: typeof item.quantity === "string" ? 0 : item.quantity,
             type: movementType as MovementType,
             reason: itemReason,
             notes: item.notes || generalNotes || "",
@@ -661,7 +661,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
     };
   }, [onClose, showScanner, searchQuery]);
 
-  const itemsWithQuantity = items.filter((item) => item.quantity > 0);
+  const itemsWithQuantity = items.filter((item) => item.quantity !== "" && item.quantity > 0);
 
   // Detectar clics fuera del modal (solo si no hay scanner abierto)
   useEffect(() => {
@@ -737,7 +737,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
         return true;
       
       case 5:
-        if (items.filter(i => i.quantity > 0).length === 0) {
+        if (items.filter(i => i.quantity !== "" && i.quantity > 0).length === 0) {
           setStepErrors(prev => ({ ...prev, [step]: "Agrega al menos un producto con cantidad" }));
           return false;
         }
@@ -1205,7 +1205,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                   const warningMessage = 
                     item.product.stock === 0 
                       ? "Stock = 0"
-                      : item.quantity > item.product.stock
+                      : item.quantity !== "" && item.quantity > item.product.stock
                       ? `Cant. > Stock`
                       : null;
                    const itemReason = item.useIndividualReason && item.reason ? item.reason : (generalReason || "");
@@ -1247,7 +1247,7 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
                         type="number"
                         min="0"
                         value={item.quantity}
-                        onChange={(e) => updateItemQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                        onChange={(e) => updateItemQuantity(item.product.id, e.target.value === "" ? "" : parseInt(e.target.value))}
                         placeholder="Cantidad"
                         className="rounded border px-2 py-1 text-xs"
                       />

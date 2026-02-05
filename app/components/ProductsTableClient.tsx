@@ -11,6 +11,7 @@ import BulkMovementModal from "@/app/components/BulkMovementModal";
 import BarcodeScannerModal from "@/app/components/BarcodeScannerModal";
 import DeleteConfirmModal from "@/app/components/DeleteConfirmModal";
 import FilterModal, { FilterOptions } from "@/app/components/FilterModal";
+import ReportsModal from "@/app/components/ReportsModal";
 import Image from "next/image";
 
 type ProductsTableClientProps = {
@@ -19,6 +20,8 @@ type ProductsTableClientProps = {
   initialPageSize: number;
   totalCount: number;
   currentPage: number;
+  allCategories?: string[];
+  allSpecialties?: string[];
 };
 
 export type { ProductsTableClientProps };
@@ -29,6 +32,8 @@ export default function ProductsTableClient({
   initialPageSize,
   totalCount,
   currentPage,
+  allCategories = [],
+  allSpecialties = [],
 }: ProductsTableClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -42,11 +47,49 @@ export default function ProductsTableClient({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [showReportMenu, setShowReportMenu] = useState(false);
+  const [showReportsModal, setShowReportsModal] = useState(false);
+  const [reportsModalType, setReportsModalType] = useState<"egresos" | "ingresos">("egresos");
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reportMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Función auxiliar para obtener los filtros actuales del URL
+  const getCurrentFilters = useCallback((): FilterOptions => {
+    return {
+      category: searchParams.get("category") || undefined,
+      specialty: searchParams.get("specialty") || undefined,
+      stockMin: searchParams.get("stockMin") ? parseInt(searchParams.get("stockMin")!) : undefined,
+      stockMax: searchParams.get("stockMax") ? parseInt(searchParams.get("stockMax")!) : undefined,
+      expirationDateFrom: searchParams.get("expirationFrom") || undefined,
+      expirationDateTo: searchParams.get("expirationTo") || undefined,
+      hasImage: searchParams.get("hasImage") === "true",
+      hasBarcode: searchParams.get("hasBarcode") === "true",
+    };
+  }, [searchParams]);
+
+  // Función auxiliar para construir los parámetros con filtros
+  const buildParamsWithFilters = useCallback(
+    (filters: FilterOptions): URLSearchParams => {
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) {
+        params.set("q", searchQuery.trim());
+      }
+
+      if (filters.category) params.set("category", filters.category);
+      if (filters.specialty) params.set("specialty", filters.specialty);
+      if (filters.stockMin !== undefined) params.set("stockMin", filters.stockMin.toString());
+      if (filters.stockMax !== undefined) params.set("stockMax", filters.stockMax.toString());
+      if (filters.expirationDateFrom) params.set("expirationFrom", filters.expirationDateFrom);
+      if (filters.expirationDateTo) params.set("expirationTo", filters.expirationDateTo);
+      if (filters.hasImage) params.set("hasImage", "true");
+      if (filters.hasBarcode) params.set("hasBarcode", "true");
+
+      return params;
+    },
+    [searchQuery]
+  );
 
   const handleSearch = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,17 +103,15 @@ export default function ProductsTableClient({
 
       // Configurar nuevo timeout para actualizar URL después de 300ms
       debounceTimerRef.current = setTimeout(() => {
-        const params = new URLSearchParams();
-        if (newQuery.trim()) {
-          params.set("q", newQuery.trim());
-        }
+        const currentFilters = getCurrentFilters();
+        const params = buildParamsWithFilters(currentFilters);
         params.set("page", "1");
         params.set("pageSize", pageSize.toString());
 
         router.push(`/?${params.toString()}`, { scroll: false });
       }, 300);
     },
-    [router, pageSize]
+    [router, pageSize, getCurrentFilters, buildParamsWithFilters]
   );
 
   useEffect(() => {
@@ -102,30 +143,26 @@ export default function ProductsTableClient({
       const newSize = parseInt(e.target.value);
       setPageSize(newSize);
 
-      const params = new URLSearchParams();
-      if (searchQuery.trim()) {
-        params.set("q", searchQuery.trim());
-      }
+      const currentFilters = getCurrentFilters();
+      const params = buildParamsWithFilters(currentFilters);
       params.set("pageSize", newSize.toString());
       params.set("page", "1");
 
       router.push(`/?${params.toString()}`, { scroll: false });
     },
-    [router, searchQuery]
+    [router, getCurrentFilters, buildParamsWithFilters]
   );
 
   const handlePageChange = useCallback(
     (newPage: number) => {
-      const params = new URLSearchParams();
-      if (searchQuery.trim()) {
-        params.set("q", searchQuery.trim());
-      }
+      const currentFilters = getCurrentFilters();
+      const params = buildParamsWithFilters(currentFilters);
       params.set("page", newPage.toString());
       params.set("pageSize", pageSize.toString());
 
       router.push(`/?${params.toString()}`, { scroll: false });
     },
-    [router, pageSize, searchQuery]
+    [router, pageSize, getCurrentFilters, buildParamsWithFilters]
   );
 
   const handleEdit = (product: Product) => {
@@ -137,7 +174,8 @@ export default function ProductsTableClient({
   const applySearchFromCode = useCallback(
     (rawCode: string) => {
       const value = rawCode.trim();
-      const params = new URLSearchParams();
+      const currentFilters = getCurrentFilters();
+      const params = buildParamsWithFilters(currentFilters);
       if (value) {
         params.set("q", value);
       }
@@ -147,7 +185,7 @@ export default function ProductsTableClient({
       setSearchQuery(value);
       router.push(`/?${params.toString()}`, { scroll: false });
     },
-    [router, pageSize]
+    [router, pageSize, getCurrentFilters, buildParamsWithFilters]
   );
 
   const handleCreate = () => {
@@ -205,11 +243,9 @@ export default function ProductsTableClient({
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      // Usar la URL actual con sus parámetros
-      const params = new URLSearchParams();
-      if (searchQuery.trim()) {
-        params.set("q", searchQuery.trim());
-      }
+      // Usar los filtros actuales con su paginación
+      const currentFilters = getCurrentFilters();
+      const params = buildParamsWithFilters(currentFilters);
       params.set("page", currentPage.toString());
       params.set("pageSize", pageSize.toString());
 
@@ -221,36 +257,22 @@ export default function ProductsTableClient({
       console.error("Error al refrescar:", error);
       setIsRefreshing(false);
     }
-  }, [router, searchQuery, currentPage, pageSize]);
+  }, [router, currentPage, pageSize, getCurrentFilters, buildParamsWithFilters]);
 
   const handleApplyFilters = useCallback(
     (filters: FilterOptions) => {
-      const params = new URLSearchParams();
-      if (searchQuery.trim()) {
-        params.set("q", searchQuery.trim());
-      }
-      
-      // Agregar filtros a los parámetros
-      if (filters.category) params.set("category", filters.category);
-      if (filters.specialty) params.set("specialty", filters.specialty);
-      if (filters.stockMin !== undefined) params.set("stockMin", filters.stockMin.toString());
-      if (filters.stockMax !== undefined) params.set("stockMax", filters.stockMax.toString());
-      if (filters.expirationDateFrom) params.set("expirationFrom", filters.expirationDateFrom);
-      if (filters.expirationDateTo) params.set("expirationTo", filters.expirationDateTo);
-      if (filters.hasImage) params.set("hasImage", "true");
-      if (filters.hasBarcode) params.set("hasBarcode", "true");
-      
+      const params = buildParamsWithFilters(filters);
       params.set("page", "1");
       params.set("pageSize", pageSize.toString());
 
       router.push(`/?${params.toString()}`, { scroll: false });
     },
-    [router, searchQuery, pageSize]
+    [router, pageSize, buildParamsWithFilters]
   );
 
-  // Extraer opciones únicas de categorías y especialidades
-  const categories = Array.from(new Set(products.map((p) => p.category).filter(Boolean))) as string[];
-  const specialties = Array.from(new Set(products.map((p) => p.specialty).filter(Boolean))) as string[];
+  // Usar las categorías y especialidades proporcionadas, o extraerlas de los productos si no se proporcionan
+  const categories = allCategories.length > 0 ? allCategories : (Array.from(new Set(products.map((p) => p.category).filter(Boolean))) as string[]);
+  const specialties = allSpecialties.length > 0 ? allSpecialties : (Array.from(new Set(products.map((p) => p.specialty).filter(Boolean))) as string[]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
 
@@ -393,7 +415,7 @@ export default function ProductsTableClient({
 
             {/* Dropdown Menu */}
             {showReportMenu && (
-              <div className="absolute right-0 mt-1 w-48 sm:w-52 bg-white rounded-md border border-slate-200 shadow-xl z-10 overflow-hidden">
+              <div className="absolute right-0 mt-1 w-48 sm:w-56 bg-white rounded-md border border-slate-200 shadow-xl z-10 overflow-hidden max-h-96 overflow-y-auto">
                 <div className="p-1">
                   <button
                     onClick={() => downloadReport("productos")}
@@ -442,6 +464,64 @@ export default function ProductsTableClient({
                     <div>
                       <p className="font-medium">Lotes por Vencer</p>
                       <p className="text-[10px] text-slate-500">Próximos 30 días</p>
+                    </div>
+                  </button>
+
+                  <div className="border-t border-slate-100 my-1"></div>
+
+                  <button
+                    onClick={() => {
+                      setReportsModalType("egresos");
+                      setShowReportsModal(true);
+                      setShowReportMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-red-50 transition-colors text-left text-xs text-slate-700 hover:text-red-700"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-4 w-4 text-red-600 flex-shrink-0"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"
+                      />
+                    </svg>
+                    <div>
+                      <p className="font-medium">Egresos</p>
+                      <p className="text-[10px] text-slate-500">Productos vendidos</p>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setReportsModalType("ingresos");
+                      setShowReportsModal(true);
+                      setShowReportMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-green-50 transition-colors text-left text-xs text-slate-700 hover:text-green-700"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-4 w-4 text-green-600 flex-shrink-0"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M7.5 3L3 7.5m0 0L7.5 12M3 7.5h13.5m0 13.5L21 16.5m0 0L16.5 12M21 16.5H7.5"
+                      />
+                    </svg>
+                    <div>
+                      <p className="font-medium">Ingresos</p>
+                      <p className="text-[10px] text-slate-500">Productos comprados</p>
                     </div>
                   </button>
                 </div>
@@ -747,6 +827,11 @@ export default function ProductsTableClient({
           specialties={specialties}
         />
       )}
+      <ReportsModal
+        isOpen={showReportsModal}
+        onClose={() => setShowReportsModal(false)}
+        initialType={reportsModalType}
+      />
     </>
   );
 }

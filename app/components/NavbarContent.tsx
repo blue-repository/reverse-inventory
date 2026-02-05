@@ -10,6 +10,7 @@ export default function NavbarContent() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [renameMode, setRenameMode] = useState(false);
   const [newUsername, setNewUsername] = useState(currentUser || "");
+  const [isDownloadingBackup, setIsDownloadingBackup] = useState(false);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
 
@@ -45,6 +46,34 @@ export default function NavbarContent() {
     }
   };
 
+  const handleDownloadBackup = async () => {
+    setIsDownloadingBackup(true);
+    try {
+      const response = await fetch("/api/backup");
+      
+      if (!response.ok) {
+        throw new Error("Error al descargar el backup");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bagatela-backup-completo-${new Date().toISOString().split("T")[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      alert("✅ Backup descargado exitosamente.\n\nEl archivo contiene todas tus tablas en formato CSV (delimitado por ;).\n\nGuárdalo en un lugar seguro.");
+    } catch (error) {
+      console.error("Error al descargar backup:", error);
+      alert("❌ Error al descargar el backup. Intenta nuevamente.");
+    } finally {
+      setIsDownloadingBackup(false);
+    }
+  };
+
   return (
     <div className="mx-auto px-4 sm:px-6 max-w-[100%] py-3 sm:py-4 grid grid-cols-[1fr_auto] items-center gap-4">
       {/* Left: Empty */}
@@ -52,6 +81,48 @@ export default function NavbarContent() {
 
       {/* Right: Notifications & User Menu */}
       <div className="flex items-center gap-2">
+        {/* Backup Button */}
+        <button
+          onClick={handleDownloadBackup}
+          disabled={isDownloadingBackup}
+          className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white hover:bg-slate-50 transition-colors text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Descargar backup de la base de datos"
+        >
+          {isDownloadingBackup ? (
+            <svg
+              className="animate-spin h-5 w-5"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              ></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+          ) : (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+              className="h-5 w-5"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+            </svg>
+          )}
+        </button>
+
         {/* Notifications Bell */}
         <div className="relative" ref={notificationsRef}>
           <button
