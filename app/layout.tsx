@@ -6,6 +6,7 @@ import { UserProvider } from "@/app/context/UserContext";
 import { ThemeProvider } from "@/app/context/ThemeContext";
 import UserIdentificationModal from "@/app/components/UserIdentificationModal";
 import NavbarWrapper from "@/app/components/NavbarWrapper";
+import { RecipeUploadQueue } from "@/app/components/RecipeUploadQueue";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,6 +45,7 @@ export default function RootLayout({
             <UserIdentificationModal />
             <NavbarWrapper />
             {children}
+            <RecipeUploadQueue />
           </UserProvider>
         </ThemeProvider>
       </body>

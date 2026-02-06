@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test PDF Upload</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+            background: #f8f9fa;
+        }
+        input[type="file"] {
+            margin: 20px 0;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .progress {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test: Subida de PDF de Receta</h1>
+    
+    <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 4px; margin: 20px 0;">
+        <strong>✓ Opción Recomendada:</strong> Ve a <a href="http://localhost:3001/test" style="color: #155724; text-decoration: underline;">http://localhost:3001/test</a> para usar la página integrada de Next.js.
+        <br><br>
+        Este archivo HTML (abajo) también funciona pero usa CORS. La página de Next.js es más confiable.
+    </div>
+    
+    <div class="upload-area">
+        <h2>📄 Selecciona un archivo PDF</h2>
+        <input type="file" id="pdfFile" accept=".pdf" />
+        <br>
+        <button id="uploadBtn" onclick="uploadPDF()">Subir y Procesar PDF</button>
+    </div>
+
+    <div id="result"></div>
+
+    <script>
+        let selectedFile = null;
+
+        document.getElementById('pdfFile').addEventListener('change', (e) => {
+            selectedFile = e.target.files[0];
+            const btn = document.getElementById('uploadBtn');
+            btn.disabled = !selectedFile;
+            if (selectedFile) {
+                btn.textContent = `Subir "${selectedFile.name}"`;
+            }
+        });
+
+        async function uploadPDF() {
+            if (!selectedFile) {
+                alert('Por favor selecciona un archivo PDF primero');
+                return;
+            }
+
+            const resultDiv = document.getElementById('result');
+            const btn = document.getElementById('uploadBtn');
+            
+            try {
+                btn.disabled = true;
+                btn.textContent = 'Procesando...';
+                
+                resultDiv.className = 'result progress';
+                resultDiv.innerHTML = '⏳ Subiendo y procesando PDF...\n' + 
+                                     `Archivo: ${selectedFile.name}\n` +
+                                     `Tamaño: ${(selectedFile.size / 1024).toFixed(2)} KB`;
+
+                // Crear FormData
+                const formData = new FormData();
+                formData.append('pdf', selectedFile);
+                formData.append('fileName', selectedFile.name);
+
+                // Enviar al servidor
+                const response = await fetch('http://localhost:3001/api/process-recipe', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                // Verificar el Content-Type
+                const contentType = response.headers.get('content-type');
+                console.log('Content-Type:', contentType);
+
+                if (contentType && contentType.includes('text/html')) {
+                    const htmlText = await response.text();
+                    throw new Error('El servidor devolvió HTML en lugar de JSON:\n\n' + htmlText.substring(0, 500));
+                }
+
+                const data = await response.json();
+                console.log('Respuesta del servidor:', data);
+
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = '✅ PDF procesado exitosamente!\n\n' + 
+                                         JSON.stringify(data, null, 2);
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = '❌ Error al procesar PDF:\n\n' + 
+                                         data.message + '\n' +
+                                         (data.error ? `Código: ${data.error}` : '');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = '❌ Error:\n\n' + error.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = selectedFile ? `Subir "${selectedFile.name}"` : 'Subir y Procesar PDF';
+            }
+        }
+    </script>
+</body>
+</html>
