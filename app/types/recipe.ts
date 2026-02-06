@@ -1,0 +1,58 @@
+/**
+ * Tipos para el procesamiento de recetas desde PDFs
+ * Corresponde a "NOTA DE EGRESO 'Egresos - Dispensación A Pacientes'"
+ */
+
+export interface RecipeMedicament {
+  sku: string;
+  name: string;
+  unit: string;
+  batch: string;
+  expirationDate: string;
+  quantity: number;
+  unitCost: number;
+  total: number;
+}
+
+export interface RecipeData {
+  // Información general del egreso
+  entityOrigin: string;
+  warehouseOrigin: string;
+  egressDate: string;
+  egressNumber: string;
+  documentType: string;
+  documentNumber: string;
+  documentDate: string;
+  additionalDocument?: string;
+
+  // Información del receptor (paciente)
+  recipientName: string;
+  recipientId: string;
+  patientIdentifier: string;
+  patientName?: string;
+
+  // Medicamentos
+  medicaments: RecipeMedicament[];
+
+  // Información adicional
+  observations?: string;
+  total: number;
+}
+
+export interface ProcessingResult {
+  success: boolean;
+  message: string;
+  egressNumber?: string;
+  medicamentCount?: number;
+  total?: number;
+  error?: string;
+}
+
+export interface UploadQueueItem {
+  id: string;
+  fileName: string;
+  status: "pending" | "processing" | "success" | "error";
+  progress: number;
+  error?: string;
+  result?: ProcessingResult;
+}

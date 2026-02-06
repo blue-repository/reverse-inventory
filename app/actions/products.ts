@@ -722,6 +722,7 @@ export async function recordBulkInventoryMovements(
     prescribed_by?: string;
     cie_code?: string;
     recipe_notes?: string;
+    patient_identification?: string;
   }>
 ) {
   try {
@@ -783,6 +784,7 @@ export async function recordBulkInventoryMovements(
         prescribed_by: movement.prescribed_by || null,
         cie_code: movement.cie_code || null,
         recipe_notes: movement.recipe_notes || null,
+        patient_identification: movement.patient_identification || null,
       };
 
       // Insertar movimiento y obtener su ID
