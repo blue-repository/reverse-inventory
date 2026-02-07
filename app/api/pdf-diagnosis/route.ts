@@ -3,7 +3,7 @@
  * GET /api/pdf-diagnosis
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
@@ -19,7 +19,7 @@ export async function GET() {
       const pdfParse = await import("pdf-parse");
       diagnostics.libraries["pdf-parse"] = {
         available: true,
-        hasDefault: !!(pdfParse.default || pdfParse),
+        hasDefault: "default" in pdfParse || !!pdfParse,
       };
     } catch (error) {
       diagnostics.libraries["pdf-parse"] = {
