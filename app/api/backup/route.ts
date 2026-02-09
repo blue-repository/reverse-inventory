@@ -87,9 +87,7 @@ export async function GET() {
 
     // Obtener datos de cada tabla
     for (const tableName of tables) {
-      console.log(`Obteniendo datos de ${tableName}...`);
       const records = await getAllRecords(tableName);
-      console.log(`${tableName}: ${records.length} registros obtenidos`);
       
       const csv = convertToCSV(records, tableName);
       backupData[tableName] = csv;

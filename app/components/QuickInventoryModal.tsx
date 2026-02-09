@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Product, MovementType } from "@/app/types/product";
-import { recordInventoryMovement, searchProducts } from "@/app/actions/products";
+import { recordMovementsWithBatchHandling, searchProducts } from "@/app/actions/products";
 import BarcodeScannerModal from "./BarcodeScannerModal";
 import { useUser } from "@/app/context/UserContext";
 
@@ -109,14 +109,16 @@ export default function QuickInventoryModal({
 
     setIsSubmitting(true);
 
-    const result = await recordInventoryMovement(
-      selectedProduct.id as string,
-      movementType,
-      parseInt(quantity),
-      reason || undefined,
-      notes || undefined,
-      currentUser || undefined
-    );
+    const result = await recordMovementsWithBatchHandling([
+      {
+        product_id: selectedProduct.id as string,
+        quantity: parseInt(quantity),
+        type: movementType,
+        reason: reason || undefined,
+        notes: notes || undefined,
+        recorded_by: currentUser || undefined,
+      }
+    ]);
 
     setIsSubmitting(false);
 

@@ -2,7 +2,7 @@
 
 import { supabase } from "@/app/lib/conections/supabase";
 import { RecipeData, ProcessingResult } from "@/app/types/recipe";
-import { recordBulkInventoryMovements } from "@/app/actions/products";
+import { recordMovementsWithBatchHandling } from "@/app/actions/products";
 import { revalidatePath } from "next/cache";
 
 /**
@@ -19,6 +19,30 @@ export async function createRecipeEgress(recipeData: RecipeData): Promise<Proces
         success: false,
         message: "Datos incompletos: falta nombre del receptor o número de egreso",
         error: "MISSING_DATA",
+      };
+    }
+
+    // Validar que la receta no haya sido cargada previamente
+    const { data: existingRecipe, error: checkError } = await supabase
+      .from("inventory_movements")
+      .select("id, recipe_code, created_at")
+      .eq("recipe_code", recipeData.egressNumber)
+      .limit(1);
+
+    if (checkError) {
+      console.error("Error al verificar receta duplicada:", checkError);
+      return {
+        success: false,
+        message: "Error al validar la receta",
+        error: "VALIDATION_ERROR",
+      };
+    }
+
+    if (existingRecipe && existingRecipe.length > 0) {
+      return {
+        success: false,
+        message: `Esta receta ya fue cargada previamente (Código: ${recipeData.egressNumber}). No se puede cargar la misma receta dos veces.`,
+        error: "DUPLICATE_RECIPE",
       };
     }
 
@@ -52,27 +76,37 @@ export async function createRecipeEgress(recipeData: RecipeData): Promise<Proces
           continue;
         }
 
-        // Construir el objeto de movimiento con la estructura de BulkMovementModal
+        // Construir el objeto de movimiento con información del lote para búsqueda
         const movement = {
           product_id: product.id as string,
           quantity: medicament.quantity,
           type: "salida" as const,
-          reason: "Entrega de receta", // Usa el mismo texto que BulkMovementModal
-          notes: `Lote: ${medicament.batch} | Vencimiento: ${medicament.expirationDate}`,
-          user_id: "Sistema", // Registrado automáticamente desde el sistema
-          // Campos automáticos
+          reason: "Entrega de receta",
+          notes: `Lote: ${medicament.batch || "No especificado"} | Vencimiento: ${medicament.expirationDate}`,
+          recorded_by: "Sistema",
+          
+          // Campos de agrupación
           movement_group_id: prescriptionGroupId,
           movement_date: recipeData.egressDate,
+          
+          // Datos de receta médica
           is_recipe_movement: true,
-          // Datos de receta médica (compatible con RecipeMedicament)
           prescription_group_id: prescriptionGroupId,
           recipe_code: recipeData.egressNumber,
           recipe_date: recipeData.egressDate,
-          patient_name: recipeData.patientName || recipeData.recipientName, // Prioriza patientName si existe
-          prescribed_by: undefined, // Número del documento del prescriptor
-          cie_code: undefined, // No está disponible en RecipeData actual
+          patient_name: recipeData.patientName || recipeData.recipientName,
+          prescribed_by: undefined,
+          cie_code: undefined,
           recipe_notes: `Paciente ID: ${recipeData.patientIdentifier} | Receptor: ${recipeData.recipientName}`,
           patient_identification: recipeData.patientIdentifier,
+          
+          // Manejo de lote: buscar por número si está disponible
+          batchHandling: medicament.batch && medicament.batch.trim()
+            ? {
+                batchSearchNumber: medicament.batch,
+                expirationDate: medicament.expirationDate,
+              }
+            : undefined,
         };
 
         movements.push(movement);
@@ -95,8 +129,8 @@ export async function createRecipeEgress(recipeData: RecipeData): Promise<Proces
       };
     }
 
-    // Usar la misma función que BulkMovementModal para guardar los movimientos
-    const result = await recordBulkInventoryMovements(movements);
+    // Usar la función centralizada para guardar los movimientos
+    const result = await recordMovementsWithBatchHandling(movements);
 
     if (!result.success) {
       return {
@@ -106,10 +140,13 @@ export async function createRecipeEgress(recipeData: RecipeData): Promise<Proces
       };
     }
 
-    // Preparar mensaje con información de medicamentos no procesados
+    // Preparar mensaje con información de medicamentos no procesados y advertencias de lotes
     let successMessage = `Egreso creado exitosamente: ${movements.length} medicamentos registrados`;
     if (productsNotFound.length > 0) {
       successMessage += ` (${productsNotFound.length} medicamentos no encontrados: ${productsNotFound.join(", ")})`;
+    }
+    if (result.batchIssues && result.batchIssues.length > 0) {
+      successMessage += ` | Advertencias de lotes: ${result.batchIssues.join("; ")}`;
     }
 
     revalidatePath("/");

@@ -5,6 +5,316 @@ import { revalidatePath } from "next/cache";
 import { InventoryMovement, MovementType, ProductBatch } from "@/app/types/product";
 import { normalizeSearchText } from "@/app/lib/search-utils";
 
+// ============ TIPOS PARA MOVIMIENTOS CENTRALIZADOS ============
+
+export interface BatchHandlingInfo {
+  // Para salidas: lote existente a descontar
+  batchId?: string;
+  
+  // Para entradas: datos para crear nuevo lote
+  batchInfo?: {
+    batch_number: string;
+    issue_date?: string;
+    expiration_date?: string;
+    shelf?: string;
+    drawer?: string;
+    section?: string;
+    location_notes?: string;
+  };
+  
+  // Para recetas: buscar lote por número específico
+  batchSearchNumber?: string;
+  expirationDate?: string; // Para mostrar en notas si no se encuentra
+}
+
+export interface MovementWithBatchHandling {
+  product_id: string;
+  quantity: number;
+  type: MovementType;
+  reason?: string;
+  notes?: string;
+  recorded_by?: string;
+  
+  // Campos de agrupación (para múltiples movimientos)
+  movement_group_id?: string;
+  movement_date?: string;
+  
+  // Datos de receta médica
+  is_recipe_movement?: boolean;
+  prescription_group_id?: string;
+  recipe_code?: string;
+  recipe_date?: string;
+  patient_name?: string;
+  prescribed_by?: string;
+  cie_code?: string;
+  recipe_notes?: string;
+  patient_identification?: string;
+  
+  // Manejo de lotes
+  batchHandling?: BatchHandlingInfo;
+}
+
+export interface MovementsResult {
+  success: boolean;
+  error?: string;
+  batchIssues?: string[]; // Advertencias de lotes
+  count?: number;
+  data?: any;
+}
+
+/**
+ * Función centralizada para registrar movimientos de inventario con manejo automático de lotes
+ * 
+ * Soporta:
+ * - Entradas con creación automática de lotes
+ * - Salidas con desconexión de lotes específicos
+ * - Búsqueda dinámica de lotes (para recetas)
+ * - Ajuste automático de cantidad si el lote no tiene suficiente stock
+ * - Registro automático en movement_batch_details
+ * 
+ * @param movements Array de movimientos a procesar
+ * @returns Resultado con status, errores y advertencias
+ */
+export async function recordMovementsWithBatchHandling(
+  movements: MovementWithBatchHandling[]
+): Promise<MovementsResult> {
+  try {
+    if (!movements || movements.length === 0) {
+      return { success: false, error: "No hay movimientos para procesar" };
+    }
+
+    const batchIssues: string[] = [];
+
+    // Validar que todos los productos existan
+    for (const movement of movements) {
+      if (movement.quantity <= 0) {
+        return { success: false, error: `Cantidad inválida para producto: ${movement.product_id}` };
+      }
+
+      const { data: productData, error: productError } = await supabase
+        .from("products")
+        .select("id, stock")
+        .eq("id", movement.product_id)
+        .is("deleted_at", null)
+        .single();
+
+      if (productError || !productData) {
+        return { success: false, error: `Producto no encontrado: ${movement.product_id}` };
+      }
+
+      // Pre-validación: si es salida sin manejo de lote específico, validar stock general
+      if (movement.type === "salida" && !movement.batchHandling?.batchId && !movement.batchHandling?.batchSearchNumber) {
+        if (productData.stock < movement.quantity) {
+          return { success: false, error: `Stock insuficiente para producto: ${movement.product_id}` };
+        }
+      }
+    }
+
+    // Procesar cada movimiento
+    for (const movement of movements) {
+      // Obtener stock actual del producto (puede haber cambiado)
+      const { data: productData } = await supabase
+        .from("products")
+        .select("stock")
+        .eq("id", movement.product_id)
+        .single();
+
+      const delta = movement.type === "entrada" ? movement.quantity : -movement.quantity;
+      const newStock = (productData?.stock || 0) + delta;
+
+      if (newStock < 0) {
+        return { success: false, error: `Stock insuficiente para producto: ${movement.product_id}` };
+      }
+
+      // Construir datos base del movimiento
+      const movementData: any = {
+        product_id: movement.product_id,
+        movement_type: movement.type,
+        quantity: movement.quantity,
+        reason: movement.reason || null,
+        notes: movement.notes || null,
+        recorded_by: movement.recorded_by || "Sistema",
+        movement_group_id: movement.movement_group_id || null,
+        movement_date: movement.movement_date || null,
+        is_recipe_movement: movement.is_recipe_movement || false,
+        prescription_group_id: movement.prescription_group_id || null,
+        recipe_code: movement.recipe_code || null,
+        recipe_date: movement.recipe_date || null,
+        patient_name: movement.patient_name || null,
+        prescribed_by: movement.prescribed_by || null,
+        cie_code: movement.cie_code || null,
+        recipe_notes: movement.recipe_notes || null,
+        patient_identification: movement.patient_identification || null,
+      };
+
+      // Insertar movimiento
+      const { data: insertedMovement, error: movementError } = await supabase
+        .from("inventory_movements")
+        .insert([movementData])
+        .select("id")
+        .single();
+
+      if (movementError || !insertedMovement) {
+        return { success: false, error: movementError?.message || "Error al insertar movimiento" };
+      }
+
+      // ==================== MANEJO DE LOTES ====================
+
+      // 1. ENTRADA: Crear nuevo lote e insertar relación
+      if (movement.type === "entrada" && movement.batchHandling?.batchInfo) {
+        // Validar que tenga fecha de vencimiento (obligatoria para lotes)
+        if (!movement.batchHandling.batchInfo.expiration_date) {
+          return { success: false, error: "La fecha de vencimiento es obligatoria para crear un lote" };
+        }
+
+        const batchData = {
+          product_id: movement.product_id,
+          batch_number: movement.batchHandling.batchInfo.batch_number,
+          stock: movement.quantity,
+          initial_stock: movement.quantity,
+          issue_date: movement.batchHandling.batchInfo.issue_date || new Date().toISOString().split("T")[0],
+          expiration_date: movement.batchHandling.batchInfo.expiration_date,
+          shelf: movement.batchHandling.batchInfo.shelf || null,
+          drawer: movement.batchHandling.batchInfo.drawer || null,
+          section: movement.batchHandling.batchInfo.section || null,
+          location_notes: movement.batchHandling.batchInfo.location_notes || null,
+          is_active: true,
+          created_by: movement.recorded_by || "Sistema",
+          updated_by: movement.recorded_by || "Sistema",
+        };
+
+        const { data: insertedBatch, error: batchError } = await supabase
+          .from("product_batches")
+          .insert([batchData])
+          .select("id")
+          .single();
+
+        if (batchError || !insertedBatch) {
+          return { success: false, error: batchError?.message || "Error al create lote" };
+        }
+
+        // Registrar relación movement_batch_details
+        await supabase.from("movement_batch_details").insert([{
+          movement_id: insertedMovement.id,
+          batch_id: insertedBatch.id,
+          quantity: movement.quantity,
+          batch_stock_before: 0, // Lote nuevo
+          batch_stock_after: movement.quantity,
+        }]);
+      }
+      // 2. SALIDA CON LOTE ESPECÍFICO POR ID: Descontar de lote existente
+      else if (movement.type === "salida" && movement.batchHandling?.batchId) {
+        const { data: batch, error: batchError } = await supabase
+          .from("product_batches")
+          .select("id, stock, batch_number")
+          .eq("id", movement.batchHandling.batchId)
+          .eq("is_active", true)
+          .single();
+
+        if (!batch || batchError) {
+          batchIssues.push(`Lote no encontrado: ${movement.batchHandling.batchId}`);
+          // Continuar sin actualizar lote (solo se descuenta del stock general)
+        } else {
+          // Validar stock disponible en el lote
+          const quantityToDeduct = Math.min(batch.stock, movement.quantity);
+          const newBatchStock = batch.stock - quantityToDeduct;
+
+          // Actualizar stock del lote
+          await supabase
+            .from("product_batches")
+            .update({
+              stock: newBatchStock,
+              updated_at: new Date().toISOString(),
+              updated_by: movement.recorded_by || "Sistema"
+            })
+            .eq("id", movement.batchHandling.batchId);
+
+          // Registrar relación movement_batch_details
+          await supabase.from("movement_batch_details").insert([{
+            movement_id: insertedMovement.id,
+            batch_id: movement.batchHandling.batchId,
+            quantity: quantityToDeduct,
+            batch_stock_before: batch.stock,
+            batch_stock_after: newBatchStock,
+          }]);
+        }
+      }
+      // 3. SALIDA CON BÚSQUEDA DE LOTE POR NÚMERO: Buscar y descontar
+      else if (movement.type === "salida" && movement.batchHandling?.batchSearchNumber) {
+        const searchBatchNumber = movement.batchHandling.batchSearchNumber.trim();
+        
+        const { data: batch, error: batchError } = await supabase
+          .from("product_batches")
+          .select("id, stock, batch_number")
+          .eq("product_id", movement.product_id)
+          .eq("batch_number", searchBatchNumber)
+          .eq("is_active", true)
+          .single();
+
+        if (batch && !batchError) {
+          // Lote encontrado
+          const quantityToDeduct = Math.min(batch.stock, movement.quantity);
+          const newBatchStock = batch.stock - quantityToDeduct;
+
+          // Si no hay suficiente stock en el lote, registrar advertencia
+          if (batch.stock < movement.quantity) {
+            batchIssues.push(
+              `${movement.product_id} (Lote ${searchBatchNumber}): disponible ${batch.stock}, solicitado ${movement.quantity}`
+            );
+          }
+
+          // Actualizar stock del lote
+          await supabase
+            .from("product_batches")
+            .update({
+              stock: newBatchStock,
+              updated_at: new Date().toISOString(),
+              updated_by: movement.recorded_by || "Sistema"
+            })
+            .eq("id", batch.id);
+
+          // Registrar relación movement_batch_details
+          await supabase.from("movement_batch_details").insert([{
+            movement_id: insertedMovement.id,
+            batch_id: batch.id,
+            quantity: quantityToDeduct,
+            batch_stock_before: batch.stock,
+            batch_stock_after: newBatchStock,
+          }]);
+        } else {
+          // Lote no encontrado
+          batchIssues.push(
+            `Lote no encontrado: ${searchBatchNumber} para producto ${movement.product_id}`
+          );
+        }
+      }
+
+      // Actualizar stock general del producto
+      await supabase
+        .from("products")
+        .update({
+          stock: newStock,
+          updated_at: new Date().toISOString(),
+          updated_by: movement.recorded_by || "Sistema",
+        })
+        .eq("id", movement.product_id);
+    }
+
+    revalidatePath("/");
+    return {
+      success: true,
+      count: movements.length,
+      batchIssues: batchIssues.length > 0 ? batchIssues : undefined,
+    };
+  } catch (error) {
+    console.error("Error en recordMovementsWithBatchHandling:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Error desconocido",
+    };
+  }
+}
+
 export async function searchProducts(
   query: string,
   page: number = 1,
@@ -334,7 +644,8 @@ export async function recordInventoryMovement(
     cieCode?: string;
     recipeNotes?: string;
   },
-  specificBatches?: { batchId: string; quantity: number }[]
+  specificBatches?: { batchId: string; quantity: number }[],
+  entryBatchId?: string // ID del lote para entradas
 ) {
   if (quantity <= 0) {
     return { success: false, error: "La cantidad debe ser mayor a 0" };
@@ -684,6 +995,29 @@ export async function recordInventoryMovement(
     return { success: false, error: error.message };
   }
 
+  // Para entradas, registrar la relación con el lote si se proporciona entryBatchId
+  if (movementType === "entrada" && entryBatchId && data && data.length > 0) {
+    // El lote debe tener stock = cantidad (es un lote nuevo)
+    const { data: batchData, error: batchError } = await supabase
+      .from("product_batches")
+      .select("stock")
+      .eq("id", entryBatchId)
+      .single();
+
+    if (!batchError && batchData) {
+      // Registrar relación en movement_batch_details
+      // batch_stock_before = 0 porque es un lote nuevo
+      // batch_stock_after = quantity (la cantidad agregada es el stock total del lote nuevo)
+      await supabase.from("movement_batch_details").insert([{
+        movement_id: data[0].id,
+        batch_id: entryBatchId,
+        quantity: quantity,
+        batch_stock_before: 0, // El lote es nuevo
+        batch_stock_after: quantity,
+      }]);
+    }
+  }
+
   // Actualizar el stock directamente en products
   await supabase
     .from("products")
@@ -714,6 +1048,8 @@ export async function recordBulkInventoryMovements(
     drawer?: string;
     section?: string;
     location_notes?: string;
+    // ID de lote existente para salidas (cuando se especifica un lote particular)
+    batch_id?: string;
     // Campos de receta médica
     prescription_group_id?: string;
     recipe_code?: string;
@@ -798,8 +1134,42 @@ export async function recordBulkInventoryMovements(
         return { success: false, error: movementError?.message || "Error al insertar movimiento" };
       }
 
+      // Si es salida y tiene batch_id especificado, procesar el lote
+      if (movement.type === "salida" && movement.batch_id) {
+        const { data: batch, error: batchError } = await supabase
+          .from("product_batches")
+          .select("id, stock")
+          .eq("id", movement.batch_id)
+          .eq("is_active", true)
+          .single();
+
+        if (batch && !batchError) {
+          // Actualizar stock del lote
+          const newBatchStock = Math.max(0, batch.stock - movement.quantity);
+          await supabase
+            .from("product_batches")
+            .update({
+              stock: newBatchStock,
+              updated_at: new Date().toISOString(),
+              updated_by: movement.user_id || "Sistema"
+            })
+            .eq("id", movement.batch_id);
+
+          // Registrar relación en movement_batch_details
+          await supabase.from("movement_batch_details").insert([{
+            movement_id: insertedMovement.id,
+            batch_id: movement.batch_id,
+            quantity: movement.quantity,
+            batch_stock_before: batch.stock,
+            batch_stock_after: newBatchStock,
+          }]);
+        } else {
+          // El lote no existe o está inactivo, solo registrar en notas
+          console.warn(`Lote no encontrado o inactivo para movimiento ${insertedMovement.id}`);
+        }
+      }
       // Si es entrada y tienen datos de lote, crear el batch
-      if (movement.type === "entrada" && movement.batch_number) {
+      else if (movement.type === "entrada" && movement.batch_number) {
         const batchData = {
           product_id: movement.product_id,
           batch_number: movement.batch_number,
@@ -983,16 +1353,18 @@ export async function createBatch(
     updated_by: createdBy || "Sistema",
   };
 
-  const { error } = await supabase
+  const { data: insertedBatch, error } = await supabase
     .from("product_batches")
-    .insert([batch]);
+    .insert([batch])
+    .select("id")
+    .single();
 
   if (error) {
     return { success: false, error: error.message };
   }
 
   revalidatePath("/");
-  return { success: true };
+  return { success: true, batchId: insertedBatch?.id };
 }
 
 export async function updateBatch(

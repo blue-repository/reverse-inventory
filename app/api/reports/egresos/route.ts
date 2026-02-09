@@ -67,37 +67,65 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Obtener lotes asociados a los productos
-    const { data: batches, error: batchError } = await supabase
-      .from("product_batches")
-      .select("*")
-      .in("product_id", productIds)
-      .eq("is_active", true);
+    // Mapear productos por ID
+    const productMap = new Map(products?.map((p) => [p.id, p]) || []);
+    
+    // Obtener IDs de movimientos únicos para consultar movement_batch_details
+    const movementIds = movements.map((m) => m.id);
+    
+    // Obtener detalles de lotes-movimientos
+    const { data: movementBatchDetails, error: movBatchError } = await supabase
+      .from("movement_batch_details")
+      .select(
+        `
+        movement_id,
+        batch_id,
+        quantity,
+        batch_stock_before,
+        batch_stock_after,
+        product_batches(
+          id,
+          product_id,
+          batch_number,
+          stock,
+          initial_stock,
+          issue_date,
+          expiration_date,
+          shelf,
+          drawer,
+          section,
+          location_notes,
+          is_active,
+          created_at,
+          updated_at
+        )
+        `
+      )
+      .in("movement_id", movementIds);
 
-    if (batchError) {
-      console.error("Error al obtener lotes:", batchError);
+    if (movBatchError) {
+      console.error("Error al obtener detalles de lotes-movimientos:", movBatchError);
       return NextResponse.json(
-        { error: "Error al obtener lotes" },
+        { error: "Error al obtener detalles de lotes" },
         { status: 500 }
       );
     }
 
-    // Mapear productos por ID
-    const productMap = new Map(products?.map((p) => [p.id, p]) || []);
-    
-    // Mapear lotes por product_id
-    const batchesByProductId = new Map<string, typeof batches>();
-    batches?.forEach((batch) => {
-      if (!batchesByProductId.has(batch.product_id)) {
-        batchesByProductId.set(batch.product_id, []);
+    // Mapear lotes por movement_id
+    const batchesByMovementId = new Map<string, any[]>();
+    movementBatchDetails?.forEach((detail) => {
+      if (!batchesByMovementId.has(detail.movement_id)) {
+        batchesByMovementId.set(detail.movement_id, []);
       }
-      batchesByProductId.get(batch.product_id)?.push(batch);
+      if (detail.product_batches) {
+        batchesByMovementId.get(detail.movement_id)?.push(detail.product_batches);
+      }
     });
 
     // Combinar datos
     const reportData = movements.map((movement) => {
       const product = productMap.get(movement.product_id);
-      const productBatches = batchesByProductId.get(movement.product_id) || [];
+      const affectedBatches = batchesByMovementId.get(movement.id) || [];
       
       return {
         id: movement.id,
@@ -110,7 +138,7 @@ export async function GET(request: NextRequest) {
         cantidad: movement.quantity,
         unidad: movement.reporting_unit || "unidad",
         lote: movement.batch_number || "-",
-        lotes: productBatches,
+        lotes: affectedBatches,
         motivo: movement.reason || "-",
         notas: movement.notes || "-",
         // Campos de receta

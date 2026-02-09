@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Product, MovementType, ProductBatch } from "@/app/types/product";
-import { recordBulkInventoryMovements, searchProducts, getProductBatches, recordInventoryMovement } from "@/app/actions/products";
+import { recordMovementsWithBatchHandling, searchProducts, getProductBatches } from "@/app/actions/products";
 import { useUser } from "@/app/context/UserContext";
 import { containsNormalized } from "@/app/lib/search-utils";
 import BarcodeScannerModal from "@/app/components/BarcodeScannerModal";
@@ -812,11 +812,11 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
           };
         });
 
+      // Procesar movimientos usando función centralizada
       if (movementType === "salida") {
-        // Siempre usar recordInventoryMovement para salidas (con o sin lotes especificos)
-        const salidaItems = items.filter(
-          (item) => item.quantity !== "" && item.quantity > 0
-        );
+        // Para salidas: procesar lote por lote si se especificaron, o todo junto
+        const salidaMovements: any[] = [];
+        const salidaItems = items.filter((item) => item.quantity !== "" && item.quantity > 0);
 
         for (const item of salidaItems) {
           const qty = typeof item.quantity === "string" ? 0 : item.quantity;
@@ -824,34 +824,99 @@ export default function BulkMovementModal({ products, onClose, onSuccess }: Bulk
             ? item.reason
             : (generalReason || "Sin especificar");
           const isRecipeMovement = itemReason === "Entrega de receta";
+          const hasIndividualReason = item.useIndividualReason && item.reason && item.reason.trim() !== "";
+          const prescriptionGroupId = isRecipeMovement && hasIndividualReason 
+            ? crypto.randomUUID() 
+            : generalPrescriptionGroupId;
 
-          const result = await recordInventoryMovement(
-            item.product.id,
-            movementType,
-            qty,
-            itemReason || undefined,
-            item.notes || generalNotes || undefined,
-            currentUser || undefined,
-            isRecipeMovement ? {
-              recipeCode: item.recipeCode || generalRecipeCode || undefined,
-              recipeDate: item.recipeDate || generalRecipeDate || undefined,
-              patientName: item.patientName || generalPatientName || undefined,
-              prescribedBy: item.prescribedBy || generalPrescribedBy || undefined,
-              cieCode: item.cieCode || generalCieCode || undefined,
-              recipeNotes: item.recipeNotes || generalRecipeNotes || undefined,
-            } : undefined,
-            (item.specifyBatches && item.selectedBatches && item.selectedBatches.length > 0)
-              ? item.selectedBatches
-              : undefined
-          );
+          // Si hay lotes específicos seleccionados, crear un movimiento por lote
+          if (item.specifyBatches && item.selectedBatches && item.selectedBatches.length > 0) {
+            for (const selectedBatch of item.selectedBatches) {
+              salidaMovements.push({
+                product_id: item.product.id,
+                quantity: selectedBatch.quantity,
+                type: movementType,
+                reason: itemReason,
+                notes: item.notes || generalNotes || "",
+                recorded_by: currentUser || "Sistema",
+                movement_group_id: movementGroupId,
+                movement_date: movementDate,
+                is_recipe_movement: isRecipeMovement,
+                ...(isRecipeMovement && {
+                  prescription_group_id: prescriptionGroupId,
+                  recipe_code: item.recipeCode || generalRecipeCode || undefined,
+                  recipe_date: item.recipeDate || generalRecipeDate || undefined,
+                  patient_name: item.patientName || generalPatientName || undefined,
+                  prescribed_by: item.prescribedBy || generalPrescribedBy || undefined,
+                  cie_code: item.cieCode || generalCieCode || undefined,
+                  recipe_notes: item.recipeNotes || generalRecipeNotes || undefined,
+                }),
+                batchHandling: {
+                  batchId: selectedBatch.batchId
+                }
+              });
+            }
+          } else {
+            // Sin lotes específicos: procesar cantidad total
+            salidaMovements.push({
+              product_id: item.product.id,
+              quantity: qty,
+              type: movementType,
+              reason: itemReason,
+              notes: item.notes || generalNotes || "",
+              recorded_by: currentUser || "Sistema",
+              movement_group_id: movementGroupId,
+              movement_date: movementDate,
+              is_recipe_movement: isRecipeMovement,
+              ...(isRecipeMovement && {
+                prescription_group_id: prescriptionGroupId,
+                recipe_code: item.recipeCode || generalRecipeCode || undefined,
+                recipe_date: item.recipeDate || generalRecipeDate || undefined,
+                patient_name: item.patientName || generalPatientName || undefined,
+                prescribed_by: item.prescribedBy || generalPrescribedBy || undefined,
+                cie_code: item.cieCode || generalCieCode || undefined,
+                recipe_notes: item.recipeNotes || generalRecipeNotes || undefined,
+              }),
+            });
+          }
+        }
 
+        if (salidaMovements.length > 0) {
+          const result = await recordMovementsWithBatchHandling(salidaMovements);
           if (!result.success) {
-            throw new Error(result.error || `Error al registrar movimiento para ${item.product.name}`);
+            throw new Error(result.error || "Error al registrar movimientos de salida");
+          }
+          if (result.batchIssues?.length) {
+            console.warn("Advertencias de lotes:", result.batchIssues);
           }
         }
       } else {
+        // Para entradas y ajustes: convertir a formato centralizado
         if (movements.length > 0) {
-          await recordBulkInventoryMovements(movements);
+          const formattedMovements = movements.map(mov => ({
+            ...mov,
+            batchHandling: movementType === "entrada" && mov.batch_number
+              ? {
+                  batchInfo: {
+                    batch_number: mov.batch_number,
+                    issue_date: mov.issue_date,
+                    expiration_date: mov.expiration_date,
+                    shelf: mov.shelf,
+                    drawer: mov.drawer,
+                    section: mov.section,
+                    location_notes: mov.location_notes,
+                  }
+                }
+              : undefined,
+          }));
+
+          const result = await recordMovementsWithBatchHandling(formattedMovements);
+          if (!result.success) {
+            throw new Error(result.error || "Error al registrar movimientos");
+          }
+          if (result.batchIssues?.length) {
+            console.warn("Advertencias de lotes:", result.batchIssues);
+          }
         }
       }
 

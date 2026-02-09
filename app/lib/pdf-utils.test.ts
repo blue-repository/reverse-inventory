@@ -10,6 +10,7 @@ import {
   extractTextFromPDF,
   parseRecipeDataFromPDF,
 } from "./pdf-utils";
+import { RecipeData } from "@/app/types/recipe";
 
 // ============================================================================
 // TEST HELPERS
@@ -102,28 +103,30 @@ export async function test_parseRecipe() {
     const buffer = await loadTestPDF("/sample-recipe.pdf");
     const recipe = await parseRecipeDataFromPDF(buffer);
 
-    console.log("✅ Receta parseada:");
-    console.log(`  - Entidad: ${recipe.entityOrigin}`);
-    console.log(`  - Bodega: ${recipe.warehouseOrigin}`);
-    console.log(`  - Fecha: ${recipe.egressDate}`);
-    console.log(`  - Número: ${recipe.egressNumber}`);
-    console.log(`  - Medicamentos: ${recipe.medicaments.length}`);
-    console.log(`  - Total: $${recipe.total}`);
+    // Validar que recipe no sea un error
+    if (typeof recipe === 'object' && 'success' in recipe && recipe.success === false) {
+      const error = (recipe as { success: false; error: string }).error;
+      console.error("❌ Validación fallida:", error);
+      throw new Error(error);
+    }
+
+    // Type assertion después de la validación
+    const validRecipe = recipe as RecipeData;
 
     // Validaciones
     const checks = {
-      "Tiene entidad origen": !!recipe.entityOrigin,
-      "Tiene bodega origen": !!recipe.warehouseOrigin,
-      "Tiene fecha válida": /\d{4}-\d{2}-\d{2}/.test(recipe.egressDate),
-      "Tiene medicamentos": recipe.medicaments.length > 0,
-      "Total es número": typeof recipe.total === "number",
+      "Tiene entidad origen": !!validRecipe.entityOrigin,
+      "Tiene bodega origen": !!validRecipe.warehouseOrigin,
+      "Tiene fecha válida": /\d{4}-\d{2}-\d{2}/.test(validRecipe.egressDate),
+      "Tiene medicamentos": validRecipe.medicaments.length > 0,
+      "Total es número": typeof validRecipe.total === "number",
     };
 
     Object.entries(checks).forEach(([name, pass]) => {
       console.log(`  ${pass ? "✓" : "✗"} ${name}`);
     });
 
-    return recipe;
+    return validRecipe;
   } catch (error) {
     console.error("❌ Test falló:", error);
     throw error;
@@ -166,8 +169,18 @@ export async function test_performance() {
     const coordResult = await parseRecipeDataFromPDF(buffer);
     console.timeEnd("Método con coordenadas");
 
-    console.log(`  Medicamentos extraídos: ${coordResult.medicaments.length}`);
-    console.log(`  Total calculado: $${coordResult.total}`);
+    // Validar que coordResult no sea un error
+    if (typeof coordResult === 'object' && 'success' in coordResult && coordResult.success === false) {
+      const error = (coordResult as { success: false; error: string }).error;
+      console.error("❌ Validación fallida:", error);
+      throw new Error(error);
+    }
+
+    // Type assertion después de la validación
+    const validResult = coordResult as RecipeData;
+
+    console.log(`  Medicamentos extraídos: ${validResult.medicaments.length}`);
+    console.log(`  Total calculado: $${validResult.total}`);
 
     return true;
   } catch (error) {

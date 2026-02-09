@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
   
   -- Campos para recetas/prescripciones
   is_recipe_movement BOOLEAN DEFAULT false,
+  patient_identification VARCHAR(255),
   patient_name VARCHAR(255),
   recipe_date DATE,
   prescribed_by VARCHAR(255),
@@ -197,6 +198,7 @@ COMMENT ON COLUMN inventory_movements.movement_group_id IS 'ID para agrupar múl
 COMMENT ON COLUMN inventory_movements.movement_date IS 'Fecha del movimiento (puede diferir de created_at)';
 COMMENT ON COLUMN inventory_movements.is_recipe_movement IS 'Indica si el movimiento está asociado a una receta médica';
 COMMENT ON COLUMN inventory_movements.patient_name IS 'Nombre del paciente (si es movimiento de receta)';
+COMMENT ON COLUMN inventory_movements.patient_identification IS 'Identificación del paciente (si es movimiento de receta)';
 COMMENT ON COLUMN inventory_movements.recipe_code IS 'Código de la receta médica';
 COMMENT ON COLUMN inventory_movements.prescription_group_id IS 'Agrupa prescripciones relacionadas';
 COMMENT ON COLUMN inventory_movements.cie_code IS 'Código CIE-10 de diagnóstico';

@@ -49,15 +49,25 @@ export default function PDFExtractionDemo() {
         parseRecipeDataFromPDF(buffer),
       ]);
 
+      // Verificar si hubo un error de validación en recipeResult
+      if (recipeResult && typeof recipeResult === 'object' && 'success' in recipeResult && recipeResult.success === false) {
+        // Mostrar el error de validación sin lanzar excepción
+        const validationError = (recipeResult as { success: false; error: string }).error || 'Documento no válido';
+        setError(validationError);
+        setKeyValues(kvResult);
+        setText(textResult);
+        setRecipe(null); // No hay datos de receta válidos
+        return;
+      }
+
       setKeyValues(kvResult);
       setText(textResult);
-      setRecipe(recipeResult);
-
-      console.log("✅ PDF procesado exitosamente");
+      setRecipe(recipeResult as RecipeData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error desconocido";
       setError(`Error procesando PDF: ${errorMessage}`);
-      console.error("Error:", err);
+      // Solo log para errores inesperados, no de validación
+      console.error("Error inesperado:", err);
     } finally {
       setLoading(false);
     }

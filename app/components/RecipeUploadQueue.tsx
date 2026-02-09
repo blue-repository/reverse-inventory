@@ -178,7 +178,19 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
       // Importar dinámicamente para procesar en el cliente
       const { parseRecipeDataFromPDF } = await import("@/app/lib/pdf-utils");
       
-      const recipeData = await parseRecipeDataFromPDF(buffer);
+      const parseResult = await parseRecipeDataFromPDF(buffer);
+      
+      // Verificar si hubo un error de validación
+      if (parseResult && typeof parseResult === 'object' && 'success' in parseResult && parseResult.success === false) {
+        // Error de validación - retornar mensaje informativo sin lanzar excepción
+        return {
+          success: false,
+          message: (parseResult as { success: false; error: string }).error || 'Documento no válido',
+          error: 'VALIDATION_ERROR'
+        };
+      }
+      
+      const recipeData = parseResult;
 
       // Paso 3: Enviar los datos procesados al servidor
       setQueue((prev) =>
@@ -201,15 +213,19 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
       if (contentType && contentType.includes("text/html")) {
         const htmlText = await response.text();
         console.error("Servidor devolvió HTML:", htmlText.substring(0, 500));
-        throw new Error(
-          "El servidor devolvió HTML en lugar de JSON. Probablemente hay un error en el servidor."
-        );
+        return {
+          success: false,
+          message: "El servidor devolvió HTML en lugar de JSON. Probablemente hay un error en el servidor.",
+          error: 'SERVER_ERROR'
+        };
       }
 
       if (!contentType || !contentType.includes("application/json")) {
-        throw new Error(
-          `Tipo de respuesta inesperado: ${contentType}. Se esperaba application/json`
-        );
+        return {
+          success: false,
+          message: `Tipo de respuesta inesperado: ${contentType}. Se esperaba application/json`,
+          error: 'INVALID_RESPONSE'
+        };
       }
 
       const data = await response.json();
@@ -219,20 +235,18 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
         prev.map((i) => (i.id === itemId ? { ...i, progress: 100 } : i))
       );
 
-      // Si la respuesta no fue exitosa, lanzar error con el mensaje
-      if (!data.success) {
-        throw new Error(data.message || "Error al procesar el archivo");
-      }
-
+      // Retornar el resultado (exitoso o no)
       return data;
     } catch (error) {
-      console.error("Error en uploadAndProcessFile:", error);
+      // Solo log de errores realmente inesperados (no de validación)
+      console.error("Error inesperado en uploadAndProcessFile:", error);
       
-      // Mejorar mensaje de error
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error("Error desconocido al procesar archivo");
+      // Retornar error en lugar de lanzar excepción
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "Error desconocido al procesar archivo",
+        error: 'UNEXPECTED_ERROR'
+      };
     }
   };
 
@@ -262,13 +276,14 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
   // No mostrar nada si no hay items
   if (queue.length === 0) {
     return (
-      <div className="fixed bottom-6 right-6 z-50">
+      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50">
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-lg"
+          className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-lg text-sm sm:text-base"
+          title="Cargar recetas en PDF"
         >
           <svg
-            className="w-5 h-5"
+            className="w-4 h-4 sm:w-5 sm:h-5"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -280,7 +295,8 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
               d="M12 4v16m8-8H4"
             />
           </svg>
-          Cargar Recetas
+          <span className="hidden sm:inline">Cargar Recetas</span>
+          <span className="sm:hidden">Recetas</span>
         </button>
         <input
           ref={fileInputRef}
@@ -298,12 +314,13 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
   if (isMinimized) {
     return (
       <div
-        className="fixed bottom-6 right-6 z-50 flex flex-col items-center gap-2 cursor-pointer"
+        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-center gap-2 cursor-pointer"
         onClick={() => setIsMinimized(false)}
+        title="Click para expandir"
       >
-        <div className="relative w-16 h-16">
+        <div className="relative w-14 h-14 sm:w-16 sm:h-16">
           {/* Círculo de fondo */}
-          <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 100 100">
+          <svg className="w-14 h-14 sm:w-16 sm:h-16 transform -rotate-90" viewBox="0 0 100 100">
             <circle
               cx="50"
               cy="50"
@@ -329,7 +346,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
           {/* Porcentaje en el centro */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-sm font-bold text-gray-800">{overallProgress}%</span>
+            <span className="text-xs sm:text-sm font-bold text-gray-800">{overallProgress}%</span>
           </div>
         </div>
 
@@ -345,11 +362,11 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
   // Versión expandida (lista)
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-80 bg-white rounded-lg shadow-xl border border-gray-200 max-h-96 flex flex-col">
+    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-96 md:w-[28rem] bg-white rounded-lg shadow-xl border border-gray-200 max-h-[70vh] sm:max-h-96 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+      <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
         <div>
-          <h3 className="font-semibold text-gray-800">Procesando Recetas</h3>
+          <h3 className="font-semibold text-gray-800 text-sm sm:text-base">Procesando Recetas</h3>
           <p className="text-xs text-gray-600">
             {status.completed + status.processing} de {status.total} completados
           </p>
@@ -366,7 +383,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
       </div>
 
       {/* Barra de progreso general */}
-      <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+      <div className="px-3 sm:px-4 py-2 bg-gray-50 border-b border-gray-200">
         <div className="w-full bg-gray-200 rounded-full h-2">
           <div
             className="bg-blue-600 h-2 rounded-full transition-all duration-300"
@@ -377,18 +394,18 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
       </div>
 
       {/* Lista de archivos */}
-      <div className="overflow-y-auto flex-1 p-4 space-y-2">
+      <div className="overflow-y-auto flex-1 p-3 sm:p-4 space-y-2">
         {queue.map((item) => (
           <div
             key={item.id}
-            className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200"
+            className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg bg-gray-50 border border-gray-200"
           >
             {/* Icono de estado */}
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 mt-0.5">
               {item.status === "processing" && (
                 <div className="animate-spin">
                   <svg
-                    className="w-5 h-5 text-blue-600"
+                    className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -403,7 +420,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
                 </div>
               )}
               {item.status === "success" && (
-                <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                   <path
                     fillRule="evenodd"
                     d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
@@ -412,7 +429,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
                 </svg>
               )}
               {item.status === "error" && (
-                <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
                   <path
                     fillRule="evenodd"
                     d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
@@ -424,10 +441,19 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
             {/* Info del archivo */}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-800 truncate">{item.fileName}</p>
-              {item.error && <p className="text-xs text-red-600 truncate">{item.error}</p>}
+              <p className="text-xs sm:text-sm font-medium text-gray-800 truncate" title={item.fileName}>
+                {item.fileName}
+              </p>
+              {item.error && (
+                <p 
+                  className="text-xs text-red-600 mt-1 break-words line-clamp-2" 
+                  title={item.error}
+                >
+                  {item.error}
+                </p>
+              )}
               {item.result && (
-                <p className="text-xs text-green-600">
+                <p className="text-xs text-green-600 mt-1">
                   {item.result.medicamentCount} medicamentos
                 </p>
               )}
@@ -435,17 +461,19 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
             {/* Progreso */}
             {item.status === "processing" && (
-              <div className="text-xs font-medium text-gray-600">{item.progress}%</div>
+              <div className="text-xs font-medium text-gray-600 flex-shrink-0">
+                {item.progress}%
+              </div>
             )}
           </div>
         ))}
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50 rounded-b-lg flex gap-2">
+      <div className="p-3 sm:p-4 border-t border-gray-200 bg-gray-50 rounded-b-lg flex gap-2">
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex-1 bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700 transition-colors"
+          className="flex-1 bg-blue-600 text-white px-3 py-2 rounded text-xs sm:text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={isProcessing}
         >
           + Añadir más
@@ -455,7 +483,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
             setQueue([]);
             filesMapRef.current.clear(); // Limpiar también el Map de archivos
           }}
-          className="flex-1 bg-gray-300 text-gray-800 px-3 py-2 rounded text-sm hover:bg-gray-400 transition-colors"
+          className="flex-1 bg-gray-300 text-gray-800 px-3 py-2 rounded text-xs sm:text-sm hover:bg-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={isProcessing}
         >
           Limpiar
@@ -473,5 +501,3 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
     </div>
   );
 };
-
-export default RecipeUploadQueue;

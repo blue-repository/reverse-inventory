@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Product, MovementType, ProductBatch } from "@/app/types/product";
-import { recordInventoryMovement, createBatch, getProductBatches } from "@/app/actions/products";
+import { recordMovementsWithBatchHandling, getProductBatches } from "@/app/actions/products";
 import { useUser } from "@/app/context/UserContext";
 
 type InventoryMovementModalProps = {
@@ -200,70 +200,83 @@ export default function InventoryMovementModal({
     setIsSubmitting(true);
 
     try {
-      // Si es entrada, crear el lote primero y registrar movimiento de entrada
-      if (movementType === "entrada") {
-        const formData = new FormData();
-        formData.append("batch_number", batchNumber);
-        formData.append("stock", quantity);
-        formData.append("issue_date", issueDate);
-        formData.append("expiration_date", expirationDate);
-        formData.append("shelf", shelf);
-        formData.append("drawer", drawer);
-        formData.append("section", section);
-        formData.append("location_notes", locationNotes);
+      const isRecipeMovement = movementType === "salida" && reason === "Entrega de receta";
 
-        const batchResult = await createBatch(
-          product.id,
-          formData,
-          currentUser || undefined
+      // Preparar movimiento con manejo de lotes
+      const movements = [
+        {
+          product_id: product.id as string,
+          quantity: qty,
+          type: movementType,
+          reason: reason || undefined,
+          notes: notes || undefined,
+          recorded_by: currentUser || undefined,
+          
+          // Datos de receta (solo para entrega de receta)
+          is_recipe_movement: isRecipeMovement,
+          ...(isRecipeMovement && {
+            prescription_group_id: crypto.randomUUID(),
+            recipe_code: recipeCode || undefined,
+            recipe_date: recipeDate || undefined,
+            patient_name: patientName || undefined,
+            prescribed_by: prescribedBy || undefined,
+            cie_code: cieCode || undefined,
+            recipe_notes: recipeNotes || undefined,
+          }),
+
+          // Manejo de lotes
+          batchHandling: movementType === "entrada" 
+            ? {
+                batchInfo: {
+                  batch_number: batchNumber,
+                  issue_date: issueDate,
+                  expiration_date: expirationDate,
+                  shelf: shelf || undefined,
+                  drawer: drawer || undefined,
+                  section: section || undefined,
+                  location_notes: locationNotes || undefined,
+                }
+              }
+            : (specifyBatches && selectedBatches.length > 0)
+              ? { /* Se procesa cada lote por separado en salidas con selección */ }
+              : undefined,
+        }
+      ];
+
+      // Para salidas con lotes específicos seleccionados, registrar por lote
+      if (movementType === "salida" && specifyBatches && selectedBatches.length > 0) {
+        const successResult = await recordMovementsWithBatchHandling(
+          selectedBatches.map(batch => ({
+            ...movements[0],
+            quantity: batch.quantity,
+            batchHandling: {
+              batchId: batch.batchId
+            }
+          }))
         );
 
-        if (!batchResult.success) {
-          throw new Error(batchResult.error || "Error al crear el lote");
+        if (!successResult.success) {
+          throw new Error(successResult.error || "Error al registrar los movimientos");
         }
 
-        // Registrar movimiento de entrada para actualizar stock y dejar trazabilidad
-        const result = await recordInventoryMovement(
-          product.id as string,
-          "entrada",
-          qty,
-          reason || undefined,
-          notes || undefined,
-          currentUser || undefined
-        );
-
-        if (!result.success) {
-          throw new Error(result.error || "Error al registrar el movimiento de entrada");
+        if (successResult.batchIssues?.length) {
+          // Mostrar advertencias pero permitir continuar
+          console.warn("Advertencias de lotes:", successResult.batchIssues);
         }
       } else {
-        // Para salidas y ajustes, registrar movimiento normal
-        // Si es una entrega de receta, incluir los datos adicionales
-        const isRecipeMovement = movementType === "salida" && reason === "Entrega de receta";
-        
-        const result = await recordInventoryMovement(
-          product.id as string,
-          movementType,
-          qty,
-          reason || undefined,
-          notes || undefined,
-          currentUser || undefined,
-          // Campos adicionales para recetas
-          isRecipeMovement ? {
-            recipeCode: recipeCode || undefined,
-            recipeDate: recipeDate || undefined,
-            patientName: patientName || undefined,
-            prescribedBy: prescribedBy || undefined,
-            cieCode: cieCode || undefined,
-            recipeNotes: recipeNotes || undefined,
-          } : undefined,
-          // Lotes específicos para salidas
-          specifyBatches && selectedBatches.length > 0 ? selectedBatches : undefined
-        );
+        // Para entradas y salidas sin lotes específicos
+        const result = await recordMovementsWithBatchHandling(movements);
 
         if (!result.success) {
           throw new Error(result.error || "Error al registrar el movimiento");
         }
+
+        if (result.batchIssues?.length) {
+          // Mostrar advertencias pero permitir continuar
+          console.warn("Advertencias de lotes:", result.batchIssues);
+        }
       }
+
 
       // Limpiar formulario
       setQuantity("");

@@ -24,7 +24,6 @@ export async function example1_ExtractKeyValues(file: File) {
     // Extraer todos los pares key-value del PDF
     const keyValues = await extractKeyValuesFromPDF(arrayBuffer);
 
-    console.log("Key-Values extraídos:", keyValues);
     /*
     Resultado esperado:
     {
@@ -38,7 +37,6 @@ export async function example1_ExtractKeyValues(file: File) {
 
     return keyValues;
   } catch (error) {
-    console.error("Error procesando PDF:", error);
     throw error;
   }
 }
@@ -54,9 +52,12 @@ export async function example2_ParseRecipeWithCoordinates(file: File) {
     // Parsear receta completa (header + medicamentos)
     const recipeData = await parseRecipeDataFromPDF(arrayBuffer);
 
-    console.log("Datos de receta:", recipeData);
-    console.log("Medicamentos:", recipeData.medicaments);
-    console.log("Total:", recipeData.total);
+    // Validar que recipeData no sea un error
+    if (typeof recipeData === 'object' && 'success' in recipeData && recipeData.success === false) {
+      const error = (recipeData as { success: false; error: string }).error;
+      console.error("Error en validación de receta:", error);
+      throw new Error(error);
+    }
 
     return recipeData;
   } catch (error) {
@@ -76,12 +77,8 @@ export async function example3_ExtractTextOnly(file: File) {
     // Extraer texto completo respetando el layout visual
     const text = await extractTextFromPDF(arrayBuffer);
 
-    console.log("Texto extraído:");
-    console.log(text);
-
     return text;
   } catch (error) {
-    console.error("Error extrayendo texto:", error);
     throw error;
   }
 }
@@ -99,12 +96,8 @@ export function useRecipePDFParser() {
       const arrayBuffer = await file.arrayBuffer();
       const recipeData = await parseRecipeDataFromPDF(arrayBuffer);
 
-      // Hacer algo con los datos...
-      console.log("Receta procesada:", recipeData);
-
       return recipeData;
     } catch (error) {
-      console.error("Error:", error);
       alert("Error procesando PDF: " + (error as Error).message);
     }
   };
@@ -128,11 +121,6 @@ export async function example5_CompareOldVsNew(file: File) {
   console.time("Método legacy");
   const text = await extractTextFromPDF(arrayBuffer);
   const oldResult = parseRecipeData(text);
-  console.timeEnd("Método legacy");
-
-  console.log("Comparación de resultados:");
-  console.log("Nuevo:", newResult);
-  console.log("Antiguo:", oldResult);
 
   // El método nuevo debería ser más preciso
   return { newResult, oldResult };
@@ -195,7 +183,6 @@ export function usePDFDropzone() {
         const arrayBuffer = await file.arrayBuffer();
         const recipeData = await parseRecipeDataFromPDF(arrayBuffer);
 
-        console.log(`Procesado ${file.name}:`, recipeData);
       } catch (error) {
         console.error(`Error en ${file.name}:`, error);
       }

@@ -12,12 +12,52 @@ export async function GET() {
 
     if (error) throw error;
 
-    // 2. Crear workbook de Excel
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Productos");
+    // 2. Obtener IDs de productos para buscar lotes
+    const productIds = products?.map((p) => p.id) || [];
 
-    // 3. Configurar encabezados
-    worksheet.columns = [
+    // 3. Obtener lotes de todos los productos
+    let batches: any[] = [];
+    if (productIds.length > 0) {
+      const { data: batchData, error: batchError } = await supabase
+        .from("product_batches")
+        .select(
+          `
+          id,
+          product_id,
+          batch_number,
+          stock,
+          initial_stock,
+          issue_date,
+          expiration_date,
+          shelf,
+          drawer,
+          section,
+          location_notes,
+          is_active,
+          created_at,
+          updated_at,
+          products(name, barcode)
+          `
+        )
+        .in("product_id", productIds)
+        .eq("is_active", true)
+        .order("batch_number", { ascending: false });
+
+      if (batchError) {
+        console.error("Error al obtener lotes:", batchError);
+      } else {
+        batches = batchData || [];
+      }
+    }
+
+    // 4. Crear workbook de Excel
+    const workbook = new ExcelJS.Workbook();
+
+    // ============ HOJA 1: PRODUCTOS ============
+    const productsSheet = workbook.addWorksheet("Productos");
+
+    // Configurar encabezados
+    productsSheet.columns = [
       { header: "Nombre del Producto", key: "name", width: 30 },
       { header: "Código de Barras", key: "barcode", width: 18 },
       { header: "Stock Actual", key: "stock", width: 12 },
@@ -27,12 +67,12 @@ export async function GET() {
       { header: "Fecha de Expiración", key: "expiration_date", width: 18 },
     ];
 
-    // 4. Estilizar encabezados
-    const headerRow = worksheet.getRow(1);
+    // Estilizar encabezados
+    const headerRow = productsSheet.getRow(1);
     headerRow.fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: { argb: "FF1F2937" }, // Gris oscuro
+      fgColor: { argb: "FF334155" }, // slate-700
     };
     headerRow.font = {
       color: { argb: "FFFFFFFF" },
@@ -40,8 +80,9 @@ export async function GET() {
       size: 11,
     };
     headerRow.alignment = { horizontal: "center", vertical: "middle" };
+    headerRow.height = 25;
 
-    // 5. Agregar datos
+    // Agregar datos de productos
     products?.forEach((product, index) => {
       const location = [product.shelf, product.drawer, product.section]
         .filter(Boolean)
@@ -51,7 +92,7 @@ export async function GET() {
         ? new Date(product.expiration_date).toLocaleDateString("es-EC")
         : "—";
 
-      const row = worksheet.addRow({
+      const row = productsSheet.addRow({
         name: product.name,
         barcode: product.barcode || "—",
         stock: product.stock,
@@ -62,16 +103,26 @@ export async function GET() {
       });
 
       // Colorear las filas alternadas
-      if (index % 2 === 0) {
-        row.fill = {
+      const bgColor = index % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC"; // blanco / slate-50
+
+      row.eachCell((cell) => {
+        cell.fill = {
           type: "pattern",
           pattern: "solid",
-          fgColor: { argb: "FFF3F4F6" }, // Gris claro
+          fgColor: { argb: bgColor },
         };
-      }
-
-      // Alineación de celdas
-      row.alignment = { horizontal: "left", vertical: "middle" };
+        cell.font = {
+          size: 10,
+          color: { argb: "FF1E293B" }, // slate-800
+        };
+        cell.alignment = { horizontal: "left", vertical: "middle" };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE2E8F0" } },
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+      });
 
       // Resaltar stock bajo (menos de 5)
       if (product.stock < 5) {
@@ -86,17 +137,12 @@ export async function GET() {
           color: { argb: "FFDC2626" }, // Rojo
         };
       }
+
+      row.height = 20;
     });
 
-    // 6. Ajustar altura de filas de datos
-    worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber > 1) {
-        row.height = 20;
-      }
-    });
-
-    // 7. Congelar la primera fila
-    worksheet.views = [
+    // Congelar la primera fila
+    productsSheet.views = [
       {
         state: "frozen",
         ySplit: 1,
@@ -104,10 +150,117 @@ export async function GET() {
       },
     ];
 
-    // 8. Generar buffer
+    // ============ HOJA 2: DETALLE DE LOTES ============
+    const batchesSheet = workbook.addWorksheet("Detalle de Lotes");
+
+    // Configurar columnas de lotes
+    batchesSheet.columns = [
+      { header: "Producto", key: "producto", width: 25 },
+      { header: "Código de Barras", key: "barcode", width: 15 },
+      { header: "Lote", key: "batch_number", width: 20 },
+      { header: "Stock Actual", key: "stock", width: 12 },
+      { header: "Stock Inicial", key: "initial_stock", width: 12 },
+      { header: "Vencimiento", key: "expiration_date", width: 15 },
+      { header: "Estante", key: "shelf", width: 12 },
+      { header: "Cajón", key: "drawer", width: 12 },
+      { header: "Sección", key: "section", width: 12 },
+      { header: "Notas Ubicación", key: "location_notes", width: 25 },
+      { header: "Observaciones", key: "observations", width: 18 },
+    ];
+
+    // Estilo header de lotes
+    const batchHeaderRow = batchesSheet.getRow(1);
+    batchHeaderRow.eachCell((cell) => {
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF059669" }, // green-600
+      };
+      cell.font = {
+        color: { argb: "FFFFFFFF" },
+        bold: true,
+        size: 11,
+      };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+      };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FF10B981" } },
+        left: { style: "thin", color: { argb: "FF10B981" } },
+        bottom: { style: "thin", color: { argb: "FF10B981" } },
+        right: { style: "thin", color: { argb: "FF10B981" } },
+      };
+    });
+    batchHeaderRow.height = 25;
+
+    // Calcular fecha actual y fecha de 3 meses adelante
+    const today = new Date();
+    const threeMonthsLater = new Date();
+    threeMonthsLater.setMonth(threeMonthsLater.getMonth() + 3);
+
+    // Agregar lotes
+    batches.forEach((batch, index) => {
+      const expirationDate = new Date(batch.expiration_date);
+      const isExpiringSoon = expirationDate <= threeMonthsLater && expirationDate >= today;
+      const observations = isExpiringSoon ? "Lote por vencer" : "";
+
+      const batchRow = batchesSheet.addRow({
+        producto: batch.products?.name || "N/A",
+        barcode: batch.products?.barcode || "—",
+        batch_number: batch.batch_number,
+        stock: batch.stock,
+        initial_stock: batch.initial_stock,
+        expiration_date: expirationDate.toLocaleDateString("es-EC"),
+        shelf: batch.shelf || "—",
+        drawer: batch.drawer || "—",
+        section: batch.section || "—",
+        location_notes: batch.location_notes || "—",
+        observations: observations,
+      });
+
+      // Determinar color de fila
+      let bgColor = "FFFFFFFF"; // blanco por defecto
+      let borderColor = "FFD1FAE5"; // verde claro por defecto
+
+      if (isExpiringSoon) {
+        bgColor = "FFFEF08A"; // amarillo warning
+        borderColor = "FFFCD34D"; // amarillo más oscuro para bordes
+      } else if (index % 2 === 1) {
+        bgColor = "FFF0FDF4"; // green-50
+      }
+
+      batchRow.eachCell((cell) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: bgColor },
+        };
+        cell.font = {
+          size: 10,
+          color: { argb: "FF1E293B" },
+          bold: isExpiringSoon ? true : false,
+        };
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: "left",
+          wrapText: true,
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: borderColor } },
+          left: { style: "thin", color: { argb: borderColor } },
+          bottom: { style: "thin", color: { argb: borderColor } },
+          right: { style: "thin", color: { argb: borderColor } },
+        };
+      });
+
+      batchRow.height = 20;
+    });
+
+    // 5. Generar buffer
     const buffer = await workbook.xlsx.writeBuffer();
 
-    // 9. Devolver archivo
+    // 6. Devolver archivo
     const fileName = `reporte-productos-${new Date()
       .toISOString()
       .split("T")[0]}.xlsx`;

@@ -39,12 +39,8 @@ async function ProductsContent({
     hasBarcode: params.hasBarcode === "true",
   };
 
-  console.log("ProductsContent - searchParams:", { query, page, pageSize, filters });
-
   const { data: products, count, error } = await searchProducts(query, page, pageSize, filters);
   const { categories, specialties } = await getAllCategoriesAndSpecialties();
-
-  console.log("Search result:", { productsCount: products?.length, totalCount: count, error });
 
   return (
     <>

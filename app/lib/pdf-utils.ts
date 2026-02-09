@@ -354,7 +354,7 @@ export async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
  */
 export async function parseRecipeDataFromPDF(
   buffer: ArrayBuffer
-): Promise<RecipeData> {
+): Promise<RecipeData | { success: false; error: string }> {
   // Detectar si estamos en el servidor o navegador
   const isServer = typeof window === "undefined";
 
@@ -418,16 +418,23 @@ export async function parseRecipeDataFromPDF(
 
   // Validar que sea una receta válida
   if (!validateRecipeDocument(fullText)) {
-    throw new Error(
-      'Documento no válido: no contiene "Egresos - Dispensación A Pacientes"'
-    );
+    // Retornar error de validación sin lanzar excepción
+    return {
+      success: false,
+      error: 'Documento no válido: El documento debe ser una "NOTA DE EGRESO" con formato específico.',
+    };
   }
 
   // Parsear usando el método legacy (funciona con texto plano)
   // Este método es más robusto y no depende de pdfjs-dist en el servidor
   const recipeData = parseRecipeData(fullText);
+  
+  // Verificar si parseRecipeData retornó un error
+  if (recipeData && typeof recipeData === 'object' && 'success' in recipeData && recipeData.success === false) {
+    return recipeData;
+  }
 
-  return recipeData;
+  return recipeData as RecipeData;
 }
 
 // ============================================================================
@@ -637,10 +644,6 @@ function assignPendingValues(
       const namePart = line.substring(0, idPosition).trim();
       const idPart = idMatch[1];
       
-      console.log("[patientName extraction] Line:", JSON.stringify(line));
-      console.log("[patientName extraction] ID found at position:", idPosition, "ID value:", idPart);
-      console.log("[patientName extraction] Name part (before ID):", JSON.stringify(namePart));
-      
       // Si el nombre tiene contenido válido
       if (namePart && namePart.length > 2 && !namePart.includes("SKU")) {
         assignHeaderValue(fields, "patientName", namePart);
@@ -648,7 +651,6 @@ function assignPendingValues(
         clearKey("patientIdentifier");
         clearKey("patientName");
         handled = true;
-        console.log("[patientName extraction] SUCCESS - Assigned name:", JSON.stringify(namePart), "id:", idPart);
       } else {
         // Si el nombre es muy corto, podría ser todo el resto de la línea
         const afterId = line.substring(idPosition + idPart.length).trim();
@@ -658,13 +660,11 @@ function assignPendingValues(
           clearKey("patientIdentifier");
           clearKey("patientName");
           handled = true;
-          console.log("[patientName extraction] SUCCESS (alt) - Assigned name:", JSON.stringify(afterId), "id:", idPart);
         }
       }
     } else {
       // Sin números de ID, intentar separar por tabs
       const segments = splitHeaderSegments(line);
-      console.log("[patientName extraction] No ID pattern found, segments:", segments);
       
       if (segments.length >= 2) {
         const lastSegment = segments[segments.length - 1];
@@ -678,7 +678,6 @@ function assignPendingValues(
             clearKey("patientIdentifier");
             clearKey("patientName");
             handled = true;
-            console.log("[patientName extraction] SUCCESS (tabs) - Assigned name:", nameCandidate, "id:", lastSegment);
           }
         }
       }
@@ -736,8 +735,6 @@ function parseHeaderFields(text: string): Partial<Record<HeaderKey, string>> {
       const end = idx + 1 < occurrences.length ? occurrences[idx + 1].index : line.length;
       const value = line.substring(start, end).trim();
 
-      console.log(`[parseHeaderFields] Found label "${current.label}" -> value: "${value}"`);
-
       if (value) {
         // Validación especial: rechazar valores sospechosamente cortos para campos importantes
         const suspiciousShortValue = 
@@ -745,7 +742,6 @@ function parseHeaderFields(text: string): Partial<Record<HeaderKey, string>> {
           value.length <= 3;
         
         if (suspiciousShortValue) {
-          console.log(`[parseHeaderFields] Rejecting suspicious short value "${value}" for ${current.key}, pushing to pending`);
           pendingKeys.push(current.key);
         } else {
           assignHeaderValue(fields, current.key, value);
@@ -773,13 +769,6 @@ function validateAndNormalizeHeaderFields(
 ): Partial<Record<HeaderKey, string>> {
   const result = { ...fields };
 
-  console.log("[validateAndNormalizeHeaderFields] Before:", {
-    patientName: result.patientName,
-    patientIdentifier: result.patientIdentifier,
-    recipientName: result.recipientName,
-    recipientId: result.recipientId,
-  });
-
   // Función auxiliar para detectar y remover duplicación
   const removeDuplication = (text: string): string => {
     if (!text) return text;
@@ -793,7 +782,6 @@ function validateAndNormalizeHeaderFields(
     const secondHalf = parts.slice(midpoint).join(" ");
     
     if (firstHalf === secondHalf && firstHalf.length > 0) {
-      console.log(`[removeDuplication] Found duplication: removing second half`);
       return firstHalf;
     }
     
@@ -836,20 +824,14 @@ function validateAndNormalizeHeaderFields(
 
   // Normalizar patientName y patientIdentifier
   if (result.patientName) {
-    console.log("[validateAndNormalizeHeaderFields] Processing patientName:", result.patientName);
     
     // Remover duplicaciones
     result.patientName = removeDuplication(result.patientName);
-    console.log("[validateAndNormalizeHeaderFields] After deduplication:", result.patientName);
     
     // Si el nombre contiene un ID al final, separarlo
     // Usar .+ (greedy) para capturar TODO el nombre antes del ID
     const nameIdMatch = result.patientName.match(/^(.+)\s+(\d{7,})$/);
     if (nameIdMatch) {
-      console.log("[validateAndNormalizeHeaderFields] Found name+ID pattern:", {
-        name: nameIdMatch[1],
-        id: nameIdMatch[2],
-      });
       result.patientName = nameIdMatch[1].trim();
       if (!result.patientIdentifier) {
         result.patientIdentifier = nameIdMatch[2];
@@ -875,13 +857,6 @@ function validateAndNormalizeHeaderFields(
       }
     }
   }
-
-  console.log("[validateAndNormalizeHeaderFields] After:", {
-    patientName: result.patientName,
-    patientIdentifier: result.patientIdentifier,
-    recipientName: result.recipientName,
-    recipientId: result.recipientId,
-  });
 
   return result;
 }
@@ -923,22 +898,16 @@ function parseMedicaments(text: string): RecipeMedicament[] {
   const tableEnd = endMatch.index!;
   const tableBlock = text.substring(tableStart, tableEnd).trim();
 
-  console.log("[parseMedicaments] Bloque de tabla aislado, longitud:", tableBlock.length);
-
   // Paso 2: Dividir en líneas limpias
   const lines = tableBlock
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  console.log("[parseMedicaments] Líneas en bloque:", lines.length);
-
   // Patrón para detectar línea con medicamento:
   // Comienza con número, seguido de SKU, y contiene "U" seguido de lote/fecha/cantidad/precios
   // LOTE: 6-8 dígitos (flexible)
   const medicamentLinePattern = /^\d+\s+([A-Z0-9-]{10,})\s+.*\sU\s+(\d{6,8})\s+(\d{4}-\d{2}-\d{2})\s+(\d+)\s+([\d.]+)\s+([\d.]+)$/;
-
-  console.log("[parseMedicaments] Comenzando extracción...\n");
 
   let foundCount = 0;
 
@@ -955,10 +924,6 @@ function parseMedicaments(text: string): RecipeMedicament[] {
       const unitCost = parseFloat(match[5]);
       const total = parseFloat(match[6]);
 
-      console.log(
-        `[parseMedicaments] ✅ Línea ${i}: SKU=${sku}, LOTE=${batch}, FECHA=${expirationDate}, CANT=${quantity}`
-      );
-
       medicaments.push({
         sku,
         name: `Medicamento ${sku}`,
@@ -972,18 +937,14 @@ function parseMedicaments(text: string): RecipeMedicament[] {
     } else {
       // Debug: mostrar por qué no coincide
       if (line.includes("U") && /^\d+\s+[A-Z0-9-]{10,}/.test(line)) {
-        console.log(`[parseMedicaments] ⚠️ Línea ${i} tiene formato de medicamento pero NO coincide patrón:`);
-        console.log(`  Contenido: "${line}"`);
         
         // Análisis detallado del por qué no coincide
         const uIndex = line.lastIndexOf(" U ");
         if (uIndex > 0) {
           const afterU = line.substring(uIndex + 3).trim();
-          console.log(`  Después de "U": "${afterU}"`);
           
           const afterUTokens = afterU.split(/\s+/);
-          console.log(`  Tokens: [lote="${afterUTokens[0]}", fecha="${afterUTokens[1]}", cant="${afterUTokens[2]}", costo="${afterUTokens[3]}", total="${afterUTokens[4]}"]`);
-          
+
           // Validar cada componente
           if (!/^\d{6,8}$/.test(afterUTokens[0])) {
             console.log(`    ❌ Lote inválido: "${afterUTokens[0]}" (espera 6-8 dígitos)`);
@@ -998,10 +959,6 @@ function parseMedicaments(text: string): RecipeMedicament[] {
       }
     }
   }
-
-  console.log(
-    `\n[parseMedicaments] Total medicamentos encontrados: ${foundCount}/${lines.length} líneas`
-  );
 
   return medicaments;
 }
@@ -1021,10 +978,14 @@ function extractDateFromText(text: string): string {
  * 
  * @deprecated Usar parseRecipeDataFromPDF() para mejor precisión con coordenadas
  */
-export function parseRecipeData(text: string): RecipeData {
+export function parseRecipeData(text: string): RecipeData | { success: false; error: string } {
   // Validar que sea una receta válida
   if (!validateRecipeDocument(text)) {
-    throw new Error('Documento no válido: no contiene "Egresos - Dispensación A Pacientes"');
+    // Retornar error de validación sin lanzar excepción
+    return {
+      success: false,
+      error: 'Documento no válido: no contiene "Egresos - Dispensación A Pacientes"',
+    };
   }
 
   let header = parseHeaderFields(text);

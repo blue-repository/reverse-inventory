@@ -64,7 +64,20 @@ export async function POST(request: NextRequest) {
             buffer.byteOffset,
             buffer.byteOffset + buffer.byteLength
           );
-          recipeData = await parseRecipeDataFromPDF(arrayBuffer);
+          const result = await parseRecipeDataFromPDF(arrayBuffer);
+          
+          // Verificar si es un error de validación
+          if (result && typeof result === 'object' && 'success' in result && result.success === false) {
+            return NextResponse.json(
+              {
+                success: false,
+                message: (result as { success: false; error: string }).error || 'Documento no válido',
+                error: "INVALID_DOCUMENT_TYPE",
+              },
+              { status: 400 }
+            );
+          }
+          recipeData = result as RecipeData;
         }
         // Sub-opción: Texto ya extraído (LEGACY)
         else if (body.pdfText) {
@@ -78,7 +91,20 @@ export async function POST(request: NextRequest) {
               { status: 400 }
             );
           }
-          recipeData = parseRecipeData(body.pdfText);
+          const result = parseRecipeData(body.pdfText);
+          
+          // Verificar si es un error de validación
+          if (result && typeof result === 'object' && 'success' in result && result.success === false) {
+            return NextResponse.json(
+              {
+                success: false,
+                message: (result as { success: false; error: string }).error || 'Documento no válido',
+                error: "INVALID_DOCUMENT_TYPE",
+              },
+              { status: 400 }
+            );
+          }
+          recipeData = result as RecipeData;
         } else {
           return NextResponse.json(
             {
@@ -125,7 +151,20 @@ export async function POST(request: NextRequest) {
 
         fileName = file.name;
         const arrayBuffer = await file.arrayBuffer();
-        recipeData = await parseRecipeDataFromPDF(arrayBuffer);
+        const result = await parseRecipeDataFromPDF(arrayBuffer);
+        
+        // Verificar si es un error de validación
+        if (result && typeof result === 'object' && 'success' in result && result.success === false) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: (result as { success: false; error: string }).error || 'Documento no válido',
+              error: "INVALID_DOCUMENT_TYPE",
+            },
+            { status: 400 }
+          );
+        }
+        recipeData = result as RecipeData;
         
       } catch (error) {
         console.error("Error procesando FormData:", error);
