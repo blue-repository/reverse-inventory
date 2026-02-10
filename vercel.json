@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/check-expiring-products",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/check-expiring-products",
+      "schedule": "0 15 * * *"
+    }
+  ]
+}

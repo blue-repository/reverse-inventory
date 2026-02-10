@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useUser } from "@/app/context/UserContext";
 import ThemeConfig from "@/app/components/ThemeConfig";
+import { useNotifications } from "@/app/hooks/useNotifications";
+import { NotificationItem } from "@/app/components/NotificationItem";
 
 export default function Navbar() {
   const { currentUser, clearUser, setCurrentUser } = useUser();
@@ -12,6 +14,19 @@ export default function Navbar() {
   const [newUsername, setNewUsername] = useState(currentUser || "");
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
+
+  // Hook de notificaciones
+  const { 
+    notifications, 
+    unreadCount, 
+    criticalCount, 
+    isLoading,
+    markAsRead,
+    dismiss 
+  } = useNotifications({
+    pollInterval: 5 * 60 * 1000, // 5 minutos
+    autoRefresh: true,
+  });
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -45,6 +60,11 @@ export default function Navbar() {
     }
   };
 
+  const handleNotificationItemClick = () => {
+    // Placeholder: Los modales se manejarán en NavbarContent o en otro componente
+    // Este Navbar es una versión simplificada sin modales
+  };
+
   return (
     <header className="border-b border-slate-200 bg-white sticky top-0 z-50">
       <div className="mx-auto px-4 sm:px-6 max-w-[100%] py-3 sm:py-4 grid grid-cols-[1fr_auto] items-center gap-4">
@@ -60,6 +80,16 @@ export default function Navbar() {
               className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white hover:bg-slate-50 transition-colors text-slate-700"
               title="Notificaciones"
             >
+              {/* Badge de notificaciones sin leer */}
+              {unreadCount > 0 && (
+                <span
+                  className={`absolute -top-1 -right-1 h-5 w-5 rounded-full text-xs font-bold text-white flex items-center justify-center ${
+                    criticalCount > 0 ? "bg-red-500" : "bg-blue-500"
+                  }`}
+                >
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
@@ -74,24 +104,68 @@ export default function Navbar() {
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-72 rounded-lg border border-slate-200 bg-white shadow-lg">
-                <div className="border-b border-slate-200 px-4 py-3">
-                  <h3 className="font-semibold text-slate-900 text-sm">Notificaciones</h3>
+              <div className="absolute right-0 mt-2 w-96 rounded-lg border border-slate-200 bg-white shadow-lg z-50">
+                <div className="border-b border-slate-200 px-4 py-3 flex items-center justify-between bg-slate-50">
+                  <h3 className="font-semibold text-slate-900 text-sm">
+                    Notificaciones
+                    {unreadCount > 0 && (
+                      <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                        {unreadCount} sin leer
+                      </span>
+                    )}
+                  </h3>
+                  {isLoading && (
+                    <div className="animate-spin">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={2}
+                        stroke="currentColor"
+                        className="w-4 h-4"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M16.023 15.14c-.068-.087-.14-.176-.207-.27a8.994 8.994 0 10-11.848 0 20.166 20.166 0 013.861 2.311M12.331 8.727a4 4 0 100 5.546"
+                        />
+                      </svg>
+                    </div>
+                  )}
                 </div>
+                
+                {/* Contenido de notificaciones */}
                 <div className="max-h-96 overflow-y-auto">
-                  <div className="px-4 py-8 text-center">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      strokeWidth={1.5}
-                      stroke="currentColor"
-                      className="h-8 w-8 mx-auto mb-2 text-slate-300"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <p className="text-xs text-slate-500">No hay notificaciones</p>
-                  </div>
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        className="h-8 w-8 mx-auto mb-2 text-slate-300"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-xs text-slate-500">
+                        No hay notificaciones de vencimiento
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 p-3 space-y-2">
+                      {notifications.map((notification) => (
+                        <div key={notification.id} className="pt-2">
+                          <NotificationItem
+                            notification={notification}
+                            onRead={markAsRead}
+                            onDismiss={dismiss}
+                            onItemClick={handleNotificationItemClick}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

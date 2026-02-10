@@ -2,15 +2,34 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useUser } from "@/app/context/UserContext";
+import { useNotifications } from "@/app/hooks/useNotifications";
+import { NotificationItem } from "@/app/components/NotificationItem";
+import { ExpiringProductNotification } from "@/app/types/notification";
+import ProductDetailsModal from "@/app/components/ProductDetailsModal";
+import { getProduct } from "@/app/actions/products";
 import ThemeConfig from "@/app/components/ThemeConfig";
 
 export default function NavbarContent() {
   const { currentUser, clearUser, setCurrentUser } = useUser();
+  const { 
+    notifications,
+    unreadCount, 
+    criticalCount, 
+    isCheckingExpiringProducts,
+    error,
+    markAsRead,
+    dismiss,
+    triggerExpiringProductsCheck 
+  } = useNotifications();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [renameMode, setRenameMode] = useState(false);
   const [newUsername, setNewUsername] = useState(currentUser || "");
   const [isDownloadingBackup, setIsDownloadingBackup] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [showProductDetails, setShowProductDetails] = useState(false);
+  const [highlightedBatchId, setHighlightedBatchId] = useState<string | null>(null);
+  const [isLoadingProduct, setIsLoadingProduct] = useState(false);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
 
@@ -32,6 +51,23 @@ export default function NavbarContent() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showUserMenu, showNotifications]);
+
+  const handleNotificationItemClick = async (notification: ExpiringProductNotification) => {
+    setIsLoadingProduct(true);
+    try {
+      const product = await getProduct(notification.product_id);
+      if (product.data) {
+        setSelectedProduct(product.data);
+        setHighlightedBatchId(notification.batch_id || null);
+        setShowProductDetails(true);
+        setShowNotifications(false);
+      }
+    } catch (error) {
+      console.error("Error loading product:", error);
+    } finally {
+      setIsLoadingProduct(false);
+    }
+  };
 
   const handleLogout = () => {
     clearUser();
@@ -75,7 +111,8 @@ export default function NavbarContent() {
   };
 
   return (
-    <div className="mx-auto px-4 sm:px-6 max-w-[100%] py-3 sm:py-4 grid grid-cols-[1fr_auto] items-center gap-4">
+    <>
+      <div className="mx-auto px-4 sm:px-6 max-w-[100%] py-3 sm:py-4 grid grid-cols-[1fr_auto] items-center gap-4">
       {/* Left: Empty */}
       <div></div>
 
@@ -140,28 +177,111 @@ export default function NavbarContent() {
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
             </svg>
+            
+            {/* Badge con el contador */}
+            {unreadCount > 0 && (
+              <span
+                className={`absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 rounded-full ${
+                  criticalCount > 0
+                    ? "bg-red-600"
+                    : "bg-blue-600"
+                }`}
+              >
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
           </button>
 
           {/* Notifications Dropdown */}
           {showNotifications && (
-            <div className="absolute right-0 mt-2 w-72 rounded-lg border border-slate-200 bg-white shadow-lg">
-              <div className="border-b border-slate-200 px-4 py-3">
+            <div className="absolute right-0 mt-2 w-80 sm:w-96 max-w-[90vw] rounded-lg border border-slate-200 bg-white shadow-lg z-50">
+              <div className="border-b border-slate-200 px-4 py-3 flex items-center justify-between">
                 <h3 className="font-semibold text-slate-900 text-sm">Notificaciones</h3>
-              </div>
-              <div className="max-h-96 overflow-y-auto">
-                <div className="px-4 py-8 text-center">
+                <button
+                  onClick={() => triggerExpiringProductsCheck()}
+                  disabled={isCheckingExpiringProducts}
+                  className="inline-flex items-center justify-center rounded-full p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Actualizar notificaciones"
+                  aria-label="Actualizar notificaciones"
+                >
                   <svg
+                    className={isCheckingExpiringProducts ? "h-4 w-4 animate-spin" : "h-4 w-4"}
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
                     viewBox="0 0 24 24"
-                    strokeWidth={1.5}
+                    strokeWidth={2}
                     stroke="currentColor"
-                    className="h-8 w-8 mx-auto mb-2 text-slate-300"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    {/* <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-5.992m19.942-2.586a2.25 2.25 0 00-2.25-2.25h-15a2.25 2.25 0 00-2.25 2.25m19.5 0a2.25 2.25 0 01-2.25 2.25H5.25a2.25 2.25 0 01-2.25-2.25m16.5 5.294a2.25 2.25 0 00-2.25 2.25v3.192c0 .683-.307 1.329-.844 1.779m11.844-8.269a2.25 2.25 0 00-2.25-2.25h-15a2.25 2.25 0 00-2.25 2.25m19.5 0a2.25 2.25 0 01-2.25 2.25H5.25a2.25 2.25 0 01-2.25-2.25m16.5-5.292a2.25 2.25 0 00-2.25 2.25v3.192a2.25 2.25 0 01-.844 1.779m0-5.971V9.348"
+                    /> */}
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" 
+                    />
                   </svg>
-                  <p className="text-xs text-slate-500">No hay notificaciones</p>
+                </button>
+              </div>
+
+              {/* Error message if any */}
+              {error && (
+                <div className="border-b border-red-200 bg-red-50 px-4 py-2 flex items-start gap-2">
+                  <svg
+                    className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 8v4m0 4v.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <div className="flex-1">
+                    <p className="text-xs text-red-600 font-medium">Error</p>
+                    <p className="text-xs text-red-500 break-words">{error}</p>
+                  </div>
                 </div>
+              )}
+
+              <div className="max-h-[60vh] overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-8 w-8 mx-auto mb-2 text-slate-300"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <p className="text-xs text-slate-500">No hay notificaciones</p>
+                  </div>
+                ) : (
+                  <div className="px-3 py-3 space-y-2">
+                    {notifications.map((notification) => (
+                      <NotificationItem
+                        key={notification.id}
+                        notification={notification}
+                        onRead={markAsRead}
+                        onDismiss={dismiss}
+                        onItemClick={handleNotificationItemClick}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -284,5 +404,20 @@ export default function NavbarContent() {
         </div>
       </div>
     </div>
+
+    {/* Product Details Modal - Triggered from Notification */}
+    {showProductDetails && selectedProduct && (
+      <ProductDetailsModal
+        product={selectedProduct}
+        onClose={() => {
+          setShowProductDetails(false);
+          setSelectedProduct(null);
+          setHighlightedBatchId(null);
+        }}
+        onEdit={() => {}}
+        highlightedBatchId={highlightedBatchId}
+      />
+    )}
+    </>
   );
 }

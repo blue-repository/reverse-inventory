@@ -12,12 +12,14 @@ type ProductDetailsModalProps = {
   product: Product;
   onClose: () => void;
   onEdit: (product: Product) => void;
+  highlightedBatchId?: string | null;
 };
 
 export default function ProductDetailsModal({
   product,
   onClose,
   onEdit,
+  highlightedBatchId,
 }: ProductDetailsModalProps) {
   const [showMovementModal, setShowMovementModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -41,6 +43,13 @@ export default function ProductDetailsModal({
   useEffect(() => {
     setCurrentProduct(product);
   }, [product.id, product]);
+
+  // Abrira automáticamente el modal de batches si hay un highlightedBatchId
+  useEffect(() => {
+    if (highlightedBatchId) {
+      setShowBatchesModal(true);
+    }
+  }, [highlightedBatchId]);
 
   // Cerrar modal con tecla ESC
   useEffect(() => {
@@ -413,6 +422,7 @@ export default function ProductDetailsModal({
                   const result = await getProductBatches(product.id);
                   setBatches(result.data);
                 }}
+                highlightedBatchId={highlightedBatchId}
               />
             )}
           </div>

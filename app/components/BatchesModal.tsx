@@ -12,6 +12,7 @@ type BatchesModalProps = {
   batches: ProductBatch[];
   onClose: () => void;
   onRefresh: () => void;
+  highlightedBatchId?: string | null;
 };
 
 export default function BatchesModal({
@@ -21,6 +22,7 @@ export default function BatchesModal({
   batches,
   onClose,
   onRefresh,
+  highlightedBatchId,
 }: BatchesModalProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedBatchForDelete, setSelectedBatchForDelete] = useState<ProductBatch | null>(null);
@@ -236,9 +238,13 @@ export default function BatchesModal({
                   {filteredActiveBatches.map((batch) => {
                     const status = getExpirationStatus(batch.expiration_date, batch.stock);
                     const daysUntil = getDaysUntilExpiration(batch.expiration_date);
+                    const isHighlighted = highlightedBatchId && batch.id === highlightedBatchId;
 
                     return (
-                      <tr key={batch.id} className="odd:bg-white even:bg-slate-50 hover:bg-slate-100">
+                      <tr 
+                        key={batch.id} 
+                        className={`${isHighlighted ? 'bg-amber-100 border-l-4 border-amber-500' : 'odd:bg-white even:bg-slate-50'} hover:bg-slate-100 transition-colors`}
+                      >
                         <td className="px-2 sm:px-4 py-2 sm:py-3 font-medium text-slate-900">
                           {batch.batch_number}
                         </td>
