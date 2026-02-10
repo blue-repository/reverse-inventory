@@ -91,13 +91,13 @@ export function NotificationItem({
           </div>
 
           {/* Nombre del producto */}
-          <p className="text-sm font-semibold text-slate-900 break-words">
+          <p className="text-xs font-semibold text-slate-900 break-words">
             {notification.product_name}
           </p>
 
           {/* Información del lote o detalles */}
           {notification.batch_number && (
-            <p className="text-xs text-slate-600 break-words">
+            <p className="text-[11px] text-slate-600 break-words">
               Lote: {notification.batch_number}
             </p>
           )}

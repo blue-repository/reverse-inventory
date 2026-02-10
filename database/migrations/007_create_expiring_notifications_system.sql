@@ -101,8 +101,8 @@ FROM products p
 WHERE 
   p.expiration_date IS NOT NULL
   AND p.deleted_at IS NULL
-  AND (p.expiration_date - CURRENT_DATE) <= 90  -- 3 meses
-  AND (p.expiration_date - CURRENT_DATE) > 0    -- No incluir ya vencidos
+  AND p.expiration_date <= (CURRENT_DATE + INTERVAL '3 months')::DATE
+  AND p.expiration_date > CURRENT_DATE          -- No incluir ya vencidos
   AND p.stock > 0
 
 UNION ALL
@@ -124,8 +124,8 @@ INNER JOIN products p ON pb.product_id = p.id
 WHERE 
   pb.expiration_date IS NOT NULL
   AND pb.is_active = true
-  AND (pb.expiration_date - CURRENT_DATE) <= 90  -- 3 meses
-  AND (pb.expiration_date - CURRENT_DATE) > 0    -- No incluir ya vencidos
+  AND pb.expiration_date <= (CURRENT_DATE + INTERVAL '3 months')::DATE
+  AND pb.expiration_date > CURRENT_DATE         -- No incluir ya vencidos
   AND pb.stock > 0
 
 ORDER BY days_until_expiration ASC;
