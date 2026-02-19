@@ -16,8 +16,8 @@ async function ProductsContent({
     specialty?: string;
     stockMin?: string;
     stockMax?: string;
-    expirationFrom?: string;
-    expirationTo?: string;
+    expirationDateFrom?: string;
+    expirationDateTo?: string;
     hasImage?: string;
     hasBarcode?: string;
   }>;
@@ -33,8 +33,8 @@ async function ProductsContent({
     specialty: params.specialty,
     stockMin: params.stockMin ? parseInt(params.stockMin) : undefined,
     stockMax: params.stockMax ? parseInt(params.stockMax) : undefined,
-    expirationDateFrom: params.expirationFrom,
-    expirationDateTo: params.expirationTo,
+    expirationDateFrom: params.expirationDateFrom,
+    expirationDateTo: params.expirationDateTo,
     hasImage: params.hasImage === "true",
     hasBarcode: params.hasBarcode === "true",
   };
@@ -74,8 +74,8 @@ export default async function Home({
     specialty?: string;
     stockMin?: string;
     stockMax?: string;
-    expirationFrom?: string;
-    expirationTo?: string;
+    expirationDateFrom?: string;
+    expirationDateTo?: string;
     hasImage?: string;
     hasBarcode?: string;
   }>;

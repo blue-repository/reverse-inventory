@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { UploadQueueItem } from "@/app/types/recipe";
 
 interface RecipeUploadQueueProps {
@@ -13,12 +14,18 @@ interface RecipeUploadQueueProps {
  * El procesamiento ocurre en segundo plano sin bloquear la UI
  */
 export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessingComplete }) => {
+  const router = useRouter();
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const processingRef = useRef<boolean>(false);
   const filesMapRef = useRef<Map<string, File>>(new Map()); // Guardar archivos aquí
+  const queueRef = useRef<UploadQueueItem[]>([]);
+
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
 
   /**
    * Maneja la selección de archivos
@@ -58,6 +65,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
     processingRef.current = true;
     setIsProcessing(true);
+    let hasSuccessfulUpload = false;
 
     for (const item of items) {
       if (item.status !== "pending") continue;
@@ -91,6 +99,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
         const result = await uploadAndProcessFile(file, item.id);
 
         if (result.success) {
+          hasSuccessfulUpload = true;
           setQueue((prev) =>
             prev.map((i) =>
               i.id === item.id
@@ -140,9 +149,13 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
     processingRef.current = false;
     setIsProcessing(false);
 
+    if (hasSuccessfulUpload) {
+      router.refresh();
+    }
+
     // Llamar callback si está definido
     if (onProcessingComplete) {
-      onProcessingComplete(queue);
+      onProcessingComplete(queueRef.current);
     }
   };
 

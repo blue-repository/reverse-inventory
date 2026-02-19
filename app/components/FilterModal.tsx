@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const CATEGORIES = ["Medicamentos", "Dispositivos Médicos"];
 
@@ -19,6 +19,7 @@ type FilterModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onApplyFilters: (filters: FilterOptions) => void;
+  currentFilters?: FilterOptions;
   categories?: string[];
   specialties: string[];
 };
@@ -27,15 +28,29 @@ export default function FilterModal({
   isOpen,
   onClose,
   onApplyFilters,
+  currentFilters = {},
   categories = CATEGORIES,
   specialties,
 }: FilterModalProps) {
-  const [filters, setFilters] = useState<FilterOptions>({});
+  const [filters, setFilters] = useState<FilterOptions>(currentFilters);
+
+  // Sincronizar el estado local cuando cambian los filtros actuales o cuando se abre el modal
+  useEffect(() => {
+    if (isOpen) {
+      setFilters(currentFilters);
+    }
+  }, [isOpen, currentFilters]);
 
   const handleApply = () => {
-    // Limpiar valores vacíos
+    // Limpiar valores vacíos y checkboxes desmarcados
     const cleanedFilters = Object.fromEntries(
-      Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined && value !== null)
+      Object.entries(filters).filter(([key, value]) => {
+        // Eliminar valores vacíos, undefined, null
+        if (value === "" || value === undefined || value === null) return false;
+        // Para checkboxes, solo incluir si están marcados (true)
+        if (key === "hasImage" || key === "hasBarcode") return value === true;
+        return true;
+      })
     ) as FilterOptions;
     onApplyFilters(cleanedFilters);
     onClose();
@@ -213,11 +228,11 @@ export default function FilterModal({
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={filters.hasImage ?? false}
+                  checked={filters.hasImage === true}
                   onChange={(e) =>
                     setFilters({
                       ...filters,
-                      hasImage: e.target.checked || undefined,
+                      hasImage: e.target.checked ? true : undefined,
                     })
                   }
                   className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
@@ -230,11 +245,11 @@ export default function FilterModal({
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={filters.hasBarcode ?? false}
+                  checked={filters.hasBarcode === true}
                   onChange={(e) =>
                     setFilters({
                       ...filters,
-                      hasBarcode: e.target.checked || undefined,
+                      hasBarcode: e.target.checked ? true : undefined,
                     })
                   }
                   className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"

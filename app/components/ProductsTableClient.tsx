@@ -55,34 +55,46 @@ export default function ProductsTableClient({
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reportMenuRef = useRef<HTMLDivElement | null>(null);
 
+  // Sincronizar searchQuery con la URL cuando cambia el parámetro de búsqueda
+  useEffect(() => {
+    const urlQuery = searchParams.get("q") || "";
+    // Solo actualizar si el valor de la URL es diferente del estado
+    setSearchQuery(urlQuery);
+  }, [searchParams.get("q")]);
+
   // Función auxiliar para obtener los filtros actuales del URL
   const getCurrentFilters = useCallback((): FilterOptions => {
+    const hasImageParam = searchParams.get("hasImage");
+    const hasBarcodeParam = searchParams.get("hasBarcode");
+    
     return {
       category: searchParams.get("category") || undefined,
       specialty: searchParams.get("specialty") || undefined,
       stockMin: searchParams.get("stockMin") ? parseInt(searchParams.get("stockMin")!) : undefined,
       stockMax: searchParams.get("stockMax") ? parseInt(searchParams.get("stockMax")!) : undefined,
-      expirationDateFrom: searchParams.get("expirationFrom") || undefined,
-      expirationDateTo: searchParams.get("expirationTo") || undefined,
-      hasImage: searchParams.get("hasImage") === "true",
-      hasBarcode: searchParams.get("hasBarcode") === "true",
+      expirationDateFrom: searchParams.get("expirationDateFrom") || undefined,
+      expirationDateTo: searchParams.get("expirationDateTo") || undefined,
+      hasImage: hasImageParam === "true" ? true : undefined,
+      hasBarcode: hasBarcodeParam === "true" ? true : undefined,
     };
   }, [searchParams]);
 
   // Función auxiliar para construir los parámetros con filtros
   const buildParamsWithFilters = useCallback(
-    (filters: FilterOptions): URLSearchParams => {
+    (filters: FilterOptions, query?: string): URLSearchParams => {
       const params = new URLSearchParams();
-      if (searchQuery.trim()) {
-        params.set("q", searchQuery.trim());
+      const searchValue = query !== undefined ? query : searchQuery;
+      
+      if (searchValue.trim()) {
+        params.set("q", searchValue.trim());
       }
 
       if (filters.category) params.set("category", filters.category);
       if (filters.specialty) params.set("specialty", filters.specialty);
       if (filters.stockMin !== undefined) params.set("stockMin", filters.stockMin.toString());
       if (filters.stockMax !== undefined) params.set("stockMax", filters.stockMax.toString());
-      if (filters.expirationDateFrom) params.set("expirationFrom", filters.expirationDateFrom);
-      if (filters.expirationDateTo) params.set("expirationTo", filters.expirationDateTo);
+      if (filters.expirationDateFrom) params.set("expirationDateFrom", filters.expirationDateFrom);
+      if (filters.expirationDateTo) params.set("expirationDateTo", filters.expirationDateTo);
       if (filters.hasImage) params.set("hasImage", "true");
       if (filters.hasBarcode) params.set("hasBarcode", "true");
 
@@ -104,7 +116,7 @@ export default function ProductsTableClient({
       // Configurar nuevo timeout para actualizar URL después de 300ms
       debounceTimerRef.current = setTimeout(() => {
         const currentFilters = getCurrentFilters();
-        const params = buildParamsWithFilters(currentFilters);
+        const params = buildParamsWithFilters(currentFilters, newQuery);
         params.set("page", "1");
         params.set("pageSize", pageSize.toString());
 
@@ -144,25 +156,27 @@ export default function ProductsTableClient({
       setPageSize(newSize);
 
       const currentFilters = getCurrentFilters();
-      const params = buildParamsWithFilters(currentFilters);
+      const currentQuery = searchParams.get("q") || "";
+      const params = buildParamsWithFilters(currentFilters, currentQuery);
       params.set("pageSize", newSize.toString());
       params.set("page", "1");
 
       router.push(`/?${params.toString()}`, { scroll: false });
     },
-    [router, getCurrentFilters, buildParamsWithFilters]
+    [router, searchParams, getCurrentFilters, buildParamsWithFilters]
   );
 
   const handlePageChange = useCallback(
     (newPage: number) => {
       const currentFilters = getCurrentFilters();
-      const params = buildParamsWithFilters(currentFilters);
+      const currentQuery = searchParams.get("q") || "";
+      const params = buildParamsWithFilters(currentFilters, currentQuery);
       params.set("page", newPage.toString());
       params.set("pageSize", pageSize.toString());
 
       router.push(`/?${params.toString()}`, { scroll: false });
     },
-    [router, pageSize, getCurrentFilters, buildParamsWithFilters]
+    [router, searchParams, pageSize, getCurrentFilters, buildParamsWithFilters]
   );
 
   const handleEdit = (product: Product) => {
@@ -175,10 +189,7 @@ export default function ProductsTableClient({
     (rawCode: string) => {
       const value = rawCode.trim();
       const currentFilters = getCurrentFilters();
-      const params = buildParamsWithFilters(currentFilters);
-      if (value) {
-        params.set("q", value);
-      }
+      const params = buildParamsWithFilters(currentFilters, value);
       params.set("page", "1");
       params.set("pageSize", pageSize.toString());
 
@@ -245,7 +256,8 @@ export default function ProductsTableClient({
     try {
       // Usar los filtros actuales con su paginación
       const currentFilters = getCurrentFilters();
-      const params = buildParamsWithFilters(currentFilters);
+      const currentQuery = searchParams.get("q") || "";
+      const params = buildParamsWithFilters(currentFilters, currentQuery);
       params.set("page", currentPage.toString());
       params.set("pageSize", pageSize.toString());
 
@@ -257,17 +269,18 @@ export default function ProductsTableClient({
       console.error("Error al refrescar:", error);
       setIsRefreshing(false);
     }
-  }, [router, currentPage, pageSize, getCurrentFilters, buildParamsWithFilters]);
+  }, [router, searchParams, currentPage, pageSize, getCurrentFilters, buildParamsWithFilters]);
 
   const handleApplyFilters = useCallback(
     (filters: FilterOptions) => {
-      const params = buildParamsWithFilters(filters);
+      const currentQuery = searchParams.get("q") || "";
+      const params = buildParamsWithFilters(filters, currentQuery);
       params.set("page", "1");
       params.set("pageSize", pageSize.toString());
 
       router.push(`/?${params.toString()}`, { scroll: false });
     },
-    [router, pageSize, buildParamsWithFilters]
+    [router, searchParams, pageSize, buildParamsWithFilters]
   );
 
   // Usar las categorías y especialidades proporcionadas, o extraerlas de los productos si no se proporcionan
@@ -823,6 +836,7 @@ export default function ProductsTableClient({
           isOpen={showFilterModal}
           onClose={() => setShowFilterModal(false)}
           onApplyFilters={handleApplyFilters}
+          currentFilters={getCurrentFilters()}
           categories={categories}
           specialties={specialties}
         />
