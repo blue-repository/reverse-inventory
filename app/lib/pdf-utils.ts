@@ -904,29 +904,55 @@ function parseMedicaments(text: string): RecipeMedicament[] {
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  // Patrón para detectar línea con medicamento:
-  // Comienza con número, seguido de SKU, y contiene "U" seguido de lote/fecha/cantidad/precios
-  // LOTE: 6-8 dígitos (flexible)
-  const medicamentLinePattern = /^\d+\s+([A-Z0-9-]{10,})\s+.*\sU\s+(\d{6,8})\s+(\d{4}-\d{2}-\d{2})\s+(\d+)\s+([\d.]+)\s+([\d.]+)$/;
+  // Estrategia principal: parsear cada fila desde el bloque completo, permitiendo
+  // descripciones multilinea y lotes alfanumericos (ej: 25OB0810, DI24104).
+  const rowPattern =
+    /(?:^|\n)\s*\d+\s+([A-Z0-9-]{10,})\s+([\s\S]*?)\s+U\s+([A-Z0-9-]{4,20})\s+(\d{4}-\d{2}-\d{2})\s+(\d+)\s+([\d.]+)\s+([\d.]+)(?=\s+\d+\s+[A-Z0-9-]{10,}|\s*$)/g;
 
-  let foundCount = 0;
+  let rowMatch: RegExpExecArray | null;
+  while ((rowMatch = rowPattern.exec(tableBlock)) !== null) {
+    const sku = rowMatch[1];
+    const name = rowMatch[2].trim().replace(/\s+/g, " ");
+    const batch = rowMatch[3];
+    const expirationDate = rowMatch[4];
+    const quantity = parseInt(rowMatch[5], 10);
+    const unitCost = parseFloat(rowMatch[6]);
+    const total = parseFloat(rowMatch[7]);
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const match = line.match(medicamentLinePattern);
+    medicaments.push({
+      sku,
+      name,
+      unit: "Caja",
+      batch,
+      expirationDate,
+      quantity,
+      unitCost,
+      total,
+    });
+  }
 
-    if (match) {
-      foundCount++;
+  // Fallback para casos simples donde cada item venga en una sola linea.
+  if (medicaments.length === 0) {
+    const medicamentLinePattern =
+      /^\d+\s+([A-Z0-9-]{10,})\s+(.+?)\s+U\s+([A-Z0-9-]{4,20})\s+(\d{4}-\d{2}-\d{2})\s+(\d+)\s+([\d.]+)\s+([\d.]+)$/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const match = line.match(medicamentLinePattern);
+
+      if (!match) continue;
+
       const sku = match[1];
-      const batch = match[2];
-      const expirationDate = match[3];
-      const quantity = parseInt(match[4], 10);
-      const unitCost = parseFloat(match[5]);
-      const total = parseFloat(match[6]);
+      const name = match[2].trim().replace(/\s+/g, " ");
+      const batch = match[3];
+      const expirationDate = match[4];
+      const quantity = parseInt(match[5], 10);
+      const unitCost = parseFloat(match[6]);
+      const total = parseFloat(match[7]);
 
       medicaments.push({
         sku,
-        name: `Medicamento ${sku}`,
+        name,
         unit: "Caja",
         batch,
         expirationDate,
@@ -934,29 +960,6 @@ function parseMedicaments(text: string): RecipeMedicament[] {
         unitCost,
         total,
       });
-    } else {
-      // Debug: mostrar por qué no coincide
-      if (line.includes("U") && /^\d+\s+[A-Z0-9-]{10,}/.test(line)) {
-        
-        // Análisis detallado del por qué no coincide
-        const uIndex = line.lastIndexOf(" U ");
-        if (uIndex > 0) {
-          const afterU = line.substring(uIndex + 3).trim();
-          
-          const afterUTokens = afterU.split(/\s+/);
-
-          // Validar cada componente
-          if (!/^\d{6,8}$/.test(afterUTokens[0])) {
-            console.log(`    ❌ Lote inválido: "${afterUTokens[0]}" (espera 6-8 dígitos)`);
-          }
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(afterUTokens[1])) {
-            console.log(`    ❌ Fecha inválida: "${afterUTokens[1]}" (espera YYYY-MM-DD)`);
-          }
-          if (!/^\d+$/.test(afterUTokens[2])) {
-            console.log(`    ❌ Cantidad inválida: "${afterUTokens[2]}" (espera número)`);
-          }
-        }
-      }
     }
   }
 

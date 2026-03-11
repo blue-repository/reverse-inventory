@@ -19,14 +19,35 @@ import {
   parseRecipeData,
   parseRecipeDataFromPDF,
 } from "@/app/lib/pdf-utils";
-import { createRecipeEgress } from "@/app/actions/recipes";
+import { createRecipeEgress, createMissingProductsAndRegisterRecipeEgress } from "@/app/actions/recipes";
 import { RecipeData } from "@/app/types/recipe";
 
 interface ProcessRecipeRequest {
+  action?: "process" | "previewRecipeEgress" | "retryRecipeEgress" | "createMissingOnly" | "createMissingAndRetry";
   recipeData?: RecipeData; // NUEVO: datos ya procesados
   pdfText?: string;
   pdfBase64?: string;
   fileName?: string;
+  allowedNegativeSkus?: string[];
+  productsToCreate?: Array<{
+    sku: string;
+    batch_number?: string;
+    name: string;
+    stock: number;
+    description?: string;
+    unit_of_measure?: string;
+    administration_route?: string;
+    notes?: string;
+    issue_date?: string;
+    expiration_date?: string;
+    shelf?: string;
+    drawer?: string;
+    section?: string;
+    location_notes?: string;
+    category?: string;
+    specialty?: string;
+    reporting_unit?: string;
+  }>;
 }
 
 export async function POST(request: NextRequest) {
@@ -55,6 +76,50 @@ export async function POST(request: NextRequest) {
             );
           }
           recipeData = body.recipeData;
+
+          if (body.action === "previewRecipeEgress") {
+            const previewResult = await createRecipeEgress(recipeData, {
+              allowedNegativeSkus: body.allowedNegativeSkus || [],
+              dryRun: true,
+            });
+
+            const previewStatusCode = previewResult.success ? 200 : 400;
+            return NextResponse.json(previewResult, { status: previewStatusCode });
+          }
+
+          if (body.action === "retryRecipeEgress") {
+            const retryResult = await createRecipeEgress(recipeData, {
+              allowedNegativeSkus: body.allowedNegativeSkus || [],
+            });
+
+            const retryStatusCode = retryResult.success ? 200 : 400;
+            return NextResponse.json(retryResult, { status: retryStatusCode });
+          }
+
+          if (body.action === "createMissingAndRetry") {
+            const productsToCreate = body.productsToCreate || [];
+            const createAndRetryResult = await createMissingProductsAndRegisterRecipeEgress(
+              recipeData,
+              productsToCreate,
+              body.allowedNegativeSkus || []
+            );
+
+            const createAndRetryStatusCode = createAndRetryResult.success ? 200 : 400;
+            return NextResponse.json(createAndRetryResult, { status: createAndRetryStatusCode });
+          }
+
+          if (body.action === "createMissingOnly") {
+            const productsToCreate = body.productsToCreate || [];
+            const createOnlyResult = await createMissingProductsAndRegisterRecipeEgress(
+              recipeData,
+              productsToCreate,
+              body.allowedNegativeSkus || [],
+              false
+            );
+
+            const createOnlyStatusCode = createOnlyResult.success ? 200 : 400;
+            return NextResponse.json(createOnlyResult, { status: createOnlyStatusCode });
+          }
         }
         // Sub-opción: PDF en base64 (LEGACY)
         else if (body.pdfBase64) {

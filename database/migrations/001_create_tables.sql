@@ -64,7 +64,6 @@ CREATE TABLE IF NOT EXISTS products (
   total_value NUMERIC(10,2),                 -- Valor total (stock * precio)
   
   -- Constraints
-  CONSTRAINT products_stock_check CHECK (stock >= 0),
   CONSTRAINT products_stock_inicial_check CHECK (stock_inicial >= 0)
 );
 

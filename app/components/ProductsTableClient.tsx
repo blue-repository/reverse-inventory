@@ -233,7 +233,13 @@ export default function ProductsTableClient({
       };
 
       const response = await fetch(endpoints[reportType]);
-      if (!response.ok) throw new Error("Error al descargar reporte");
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        const errorText = contentType.includes("application/json")
+          ? (await response.json()).error
+          : await response.text();
+        throw new Error(errorText || `HTTP ${response.status}`);
+      }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -246,8 +252,9 @@ export default function ProductsTableClient({
       document.body.removeChild(a);
       setShowReportMenu(false);
     } catch (error) {
-      alert("Error al descargar el reporte");
-      console.error(error);
+      const msg = error instanceof Error ? error.message : "Error desconocido";
+      alert(`Error al descargar el reporte: ${msg}`);
+      console.error("downloadReport error:", error);
     }
   };
 

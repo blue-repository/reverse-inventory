@@ -14,6 +14,22 @@ export interface RecipeMedicament {
   total: number;
 }
 
+export interface MissingRecipeMedicament extends RecipeMedicament {
+  reason?: string;
+}
+
+export interface AlreadyProcessedRecipeMedicament extends RecipeMedicament {
+  productId?: string;
+}
+
+export interface InsufficientStockItem {
+  sku: string;
+  productId: string;
+  productName: string;
+  requestedQuantity: number;
+  currentStock: number;
+}
+
 export interface RecipeData {
   // Información general del egreso
   entityOrigin: string;
@@ -42,10 +58,14 @@ export interface RecipeData {
 export interface ProcessingResult {
   success: boolean;
   message: string;
+  didExecuteEgress?: boolean;
   egressNumber?: string;
   medicamentCount?: number;
   total?: number;
   error?: string;
+  missingMedicaments?: MissingRecipeMedicament[];
+  insufficientStockItems?: InsufficientStockItem[];
+  alreadyProcessedMedicaments?: AlreadyProcessedRecipeMedicament[];
 }
 
 export interface UploadQueueItem {

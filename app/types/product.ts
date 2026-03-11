@@ -14,6 +14,7 @@ export type Product = {
   id: string;
   name: string;
   barcode?: string | null;
+  batch_number?: string | null;
   description?: string | null;
   stock: number;
   stock_inicial: number;

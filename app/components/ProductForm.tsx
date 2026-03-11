@@ -68,24 +68,27 @@ const ADMINISTRATION_ROUTES = [
 
 type ProductFormProps = {
   product?: Product;
+  initialValues?: Partial<Product>;
+  onSuccess?: () => void;
   onClose: () => void;
 };
 
-export default function ProductForm({ product, onClose }: ProductFormProps) {
+export default function ProductForm({ product, initialValues, onSuccess, onClose }: ProductFormProps) {
   const { currentUser } = useUser();
+  const prefill = product || initialValues;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [barcodeValue, setBarcodeValue] = useState<string>(product?.barcode || "");
+  const [barcodeValue, setBarcodeValue] = useState<string>(prefill?.barcode || "");
   const [showScanner, setShowScanner] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>(product?.image_url || "");
+  const [imagePreview, setImagePreview] = useState<string>(prefill?.image_url || "");
   const [imageLoading, setImageLoading] = useState(true);
   const [imageToDelete, setImageToDelete] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>(product?.category || "");
-  const [selectedSpecialty, setSelectedSpecialty] = useState<string>(product?.specialty || "");
-  const [selectedUnitOfMeasure, setSelectedUnitOfMeasure] = useState<string>(product?.unit_of_measure || "");
-  const [selectedReportingUnit, setSelectedReportingUnit] = useState<string>(product?.reporting_unit || "");
-  const [selectedAdminRoute, setSelectedAdminRoute] = useState<string>(product?.administration_route || "");
+  const [selectedCategory, setSelectedCategory] = useState<string>(prefill?.category || "");
+  const [selectedSpecialty, setSelectedSpecialty] = useState<string>(prefill?.specialty || "");
+  const [selectedUnitOfMeasure, setSelectedUnitOfMeasure] = useState<string>(prefill?.unit_of_measure || "");
+  const [selectedReportingUnit, setSelectedReportingUnit] = useState<string>(prefill?.reporting_unit || "");
+  const [selectedAdminRoute, setSelectedAdminRoute] = useState<string>(prefill?.administration_route || "");
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -217,6 +220,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
         : await createProduct(formData, currentUser || undefined);
 
       if (result.success) {
+        onSuccess?.();
         onClose();
       } else {
         setError(result.error || "Error al guardar el producto");
@@ -237,7 +241,11 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
           </h2>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-3 sm:p-4 md:p-6">
+        <form
+          onSubmit={handleSubmit}
+          className="p-3 sm:p-4 md:p-6 [&_input]:text-black [&_textarea]:text-black [&_select]:text-black [&_input]:placeholder:text-slate-500 [&_textarea]:placeholder:text-slate-500"
+        >
+        <input type="hidden" name="batch_number" defaultValue={prefill?.batch_number || ""} />
         {error && (
           <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-red-800">
             {error}
@@ -253,7 +261,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
             <input
               type="text"
               name="name"
-              defaultValue={product?.name}
+              defaultValue={prefill?.name || ""}
               required
               className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
             />
@@ -291,7 +299,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
             <input
               type="number"
               name="stock"
-              defaultValue={product?.stock || 0}
+              defaultValue={prefill?.stock || 0}
               min="0"
               required
               className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -375,7 +383,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
             </label>
             <textarea
               name="description"
-              defaultValue={product?.description || ""}
+              defaultValue={prefill?.description || ""}
               rows={3}
               className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
             />
@@ -389,7 +397,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
             <input
               type="date"
               name="issue_date"
-              defaultValue={product?.issue_date || ""}
+              defaultValue={prefill?.issue_date || ""}
               className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
             />
           </div>
@@ -402,7 +410,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
             <input
               type="date"
               name="expiration_date"
-              defaultValue={product?.expiration_date || ""}
+              defaultValue={prefill?.expiration_date || ""}
               className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
             />
           </div>
@@ -487,7 +495,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
                 <input
                   type="text"
                   name="shelf"
-                  defaultValue={product?.shelf || ""}
+                  defaultValue={prefill?.shelf || ""}
                   placeholder="Ej: A, B, C"
                   className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                 />
@@ -501,7 +509,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
                 <input
                   type="text"
                   name="drawer"
-                  defaultValue={product?.drawer || ""}
+                  defaultValue={prefill?.drawer || ""}
                   placeholder="Ej: 1, 2, 3"
                   className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                 />
@@ -515,7 +523,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
                 <input
                   type="text"
                   name="section"
-                  defaultValue={product?.section || ""}
+                  defaultValue={prefill?.section || ""}
                   placeholder="Ej: Izq, Der"
                   className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                 />
@@ -528,7 +536,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
                 </label>
                 <textarea
                   name="location_notes"
-                  defaultValue={product?.location_notes || ""}
+                  defaultValue={prefill?.location_notes || ""}
                   rows={2}
                   placeholder="Detalles adicionales sobre la ubicación..."
                   className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -544,7 +552,7 @@ export default function ProductForm({ product, onClose }: ProductFormProps) {
             </label>
             <textarea
               name="notes"
-              defaultValue={product?.notes || ""}
+              defaultValue={prefill?.notes || ""}
               rows={2}
               className="w-full rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
             />
