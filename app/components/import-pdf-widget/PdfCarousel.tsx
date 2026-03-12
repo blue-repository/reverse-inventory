@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { useKeenSlider } from "keen-slider/react";
 import "keen-slider/keen-slider.min.css";
-import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Minus } from "lucide-react";
 import { PdfSummary } from "@/app/components/import-pdf-widget/types";
 import { PdfCard } from "@/app/components/import-pdf-widget/PdfCard";
 import { Button } from "@/app/components/ui/button";
@@ -15,6 +15,7 @@ interface PdfCarouselProps {
   onRemovePdf: (pdfId: string) => void;
   onOpenPdf: (pdfId: string) => void;
   onToggleExpanded: () => void;
+  onMinimize: () => void;
   isExpanded: boolean;
 }
 
@@ -25,6 +26,7 @@ export function PdfCarousel({
   onRemovePdf,
   onOpenPdf,
   onToggleExpanded,
+  onMinimize,
   isExpanded,
 }: PdfCarouselProps) {
   const initialIndex = useMemo(() => {
@@ -60,6 +62,9 @@ export function PdfCarousel({
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
         <h3 className="text-sm font-semibold text-slate-900">Carrusel de PDFs</h3>
         <div className="flex items-center gap-2">
+          <Button type="button" size="icon" variant="outline" onClick={onMinimize} title="Minimizar">
+            <Minus className="h-4 w-4" />
+          </Button>
           <Button type="button" size="icon" variant="outline" onClick={onToggleExpanded}>
             {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </Button>
@@ -77,7 +82,7 @@ export function PdfCarousel({
 
       <div ref={sliderRef} className="keen-slider p-3" onWheel={onWheelScroll}>
         {items.map((pdf) => (
-          <div className="keen-slider__slide !w-auto" key={pdf.id}>
+          <div className="keen-slider__slide !w-[170px] !min-w-[170px] !max-w-[170px] !shrink-0" key={pdf.id}>
             <PdfCard
               pdf={pdf}
               isActive={activePdfId === pdf.id}

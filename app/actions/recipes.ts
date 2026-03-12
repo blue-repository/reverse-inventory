@@ -219,7 +219,7 @@ export async function createRecipeEgress(
         product_id: product.id,
         quantity: medicament.quantity,
         type: "salida" as const,
-        reason: "Entrega de receta",
+        reason: recipeData.egressSubtype || "Entrega de receta",
         notes: `Lote: ${medicament.batch || "No especificado"} | Vencimiento: ${medicament.expirationDate}`,
         recorded_by: "Sistema",
 

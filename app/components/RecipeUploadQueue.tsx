@@ -895,27 +895,27 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
   if (queue.length === 0) {
     return (
-      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50">
+      <div
+        className="fixed right-0 bottom-24 z-40 group flex items-center"
+        style={{ transform: 'translateX(calc(100% - 36px))', transition: 'transform 0.25s ease' }}
+        onMouseEnter={e => (e.currentTarget.style.transform = 'translateX(0)')}
+        onMouseLeave={e => (e.currentTarget.style.transform = 'translateX(calc(100% - 36px))')}
+        onFocus={e => (e.currentTarget.style.transform = 'translateX(0)')}
+        onBlur={e => (e.currentTarget.style.transform = 'translateX(calc(100% - 36px))')}
+      >
+        {/* Pestaña visible (ícono siempre a la vista) */}
+        <div className="flex-shrink-0 flex items-center justify-center w-9 h-12 bg-blue-600 rounded-l-lg shadow-lg cursor-pointer" aria-hidden="true">
+          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        {/* Botón expandido que aparece al hacer hover */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-lg text-sm sm:text-base"
+          className="flex items-center gap-2 bg-blue-600 text-white pl-2 pr-4 py-3 text-sm font-medium whitespace-nowrap hover:bg-blue-700 transition-colors shadow-lg rounded-none"
           title="Cargar recetas en PDF"
         >
-          <svg
-            className="w-4 h-4 sm:w-5 sm:h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
-          <span className="hidden sm:inline">Cargar Recetas</span>
-          <span className="sm:hidden">Recetas</span>
+          Cargar Recetas
         </button>
         <input
           ref={fileInputRef}
@@ -932,47 +932,36 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
   if (isMinimized) {
     return (
       <div
-        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-center gap-2 cursor-pointer"
+        className="fixed right-0 bottom-24 z-40 flex items-center cursor-pointer"
+        style={{ transform: 'translateX(calc(100% - 36px))', transition: 'transform 0.25s ease' }}
+        onMouseEnter={e => (e.currentTarget.style.transform = 'translateX(0)')}
+        onMouseLeave={e => (e.currentTarget.style.transform = 'translateX(calc(100% - 36px))')}
         onClick={() => setIsMinimized(false)}
-        title="Click para expandir"
+        title="Click para expandir la cola de recetas"
       >
-        <div className="relative w-14 h-14 sm:w-16 sm:h-16">
-          {/* Círculo de fondo */}
-          <svg className="w-14 h-14 sm:w-16 sm:h-16 transform -rotate-90" viewBox="0 0 100 100">
-            <circle
-              cx="50"
-              cy="50"
-              r="45"
-              fill="white"
-              stroke="#e5e7eb"
-              strokeWidth="2"
-            />
-            {/* Círculo de progreso */}
-            <circle
-              cx="50"
-              cy="50"
-              r="45"
-              fill="transparent"
-              stroke="#3b82f6"
-              strokeWidth="2"
-              strokeDasharray={`${45 * 2 * Math.PI}`}
-              strokeDashoffset={`${45 * 2 * Math.PI * (1 - overallProgress / 100)}`}
-              strokeLinecap="round"
+        {/* Pestaña con anillo de progreso */}
+        <div className="flex-shrink-0 relative flex items-center justify-center w-9 h-14 bg-white border border-slate-200 rounded-l-lg shadow-lg">
+          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 36 56" fill="none">
+            <rect x="1" y="1" width="34" height="54" rx="7" ry="7" stroke="#e5e7eb" strokeWidth="1.5" fill="white" />
+            <rect
+              x="1" y="1" width="34" height="54" rx="7" ry="7"
+              stroke="#3b82f6" strokeWidth="2"
+              strokeDasharray={`${2 * (34 + 54)}`}
+              strokeDashoffset={`${2 * (34 + 54) * (1 - overallProgress / 100)}`}
+              fill="none"
               className="transition-all duration-300"
             />
           </svg>
-
-          {/* Porcentaje en el centro */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-xs sm:text-sm font-bold text-gray-800">{overallProgress}%</span>
-          </div>
+          <span className="relative z-10 text-[10px] font-bold text-blue-600 leading-none">{overallProgress}%</span>
         </div>
-
-        {/* Tooltip con info */}
-        <div className="bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
-          {status.processing > 0
-            ? `Procesando... ${status.completed}/${status.total}`
-            : `${status.completed}✓ ${status.errors > 0 ? `${status.errors}✗` : ""}`}
+        {/* Panel expandido */}
+        <div className="flex flex-col justify-center gap-0.5 bg-white border-y border-l-0 border-r-0 border-slate-200 shadow-lg px-3 py-2.5 min-w-[140px]">
+          <span className="text-xs font-semibold text-slate-800 whitespace-nowrap">
+            {status.processing > 0 ? 'Procesando recetas…' : 'Cola de recetas'}
+          </span>
+          <span className="text-[10px] text-slate-500 whitespace-nowrap">
+            {status.completed}/{status.total} · {status.errors > 0 ? `${status.errors} error(es)` : 'sin errores'}
+          </span>
         </div>
       </div>
     );
@@ -998,6 +987,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
         onRemovePdf={removeQueueItem}
         onOpenPdf={setOpenedPdfId}
         onToggleExpanded={() => setIsExpanded((prev) => !prev)}
+        onMinimize={() => setIsMinimized(true)}
         onSearchChange={setSearch}
         onToggleGroup={toggleGroupCollapsed}
         onToggleNegative={toggleNegativeSelection}

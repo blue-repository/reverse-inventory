@@ -24,7 +24,7 @@ export function MissingProductRow({
   return (
     <TableRow className="bg-amber-50 hover:bg-amber-100/50">
       <TableCell className="w-[68px]" />
-      <TableCell className="font-mono text-xs">-</TableCell>
+      <TableCell className="font-mono text-xs">{row.sku}</TableCell>
       <TableCell>{row.name || row.sku}</TableCell>
       <TableCell className="text-right font-semibold">{row.quantity}</TableCell>
       <TableCell>

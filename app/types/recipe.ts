@@ -1,6 +1,6 @@
 /**
- * Tipos para el procesamiento de recetas desde PDFs
- * Corresponde a "NOTA DE EGRESO 'Egresos - Dispensación A Pacientes'"
+ * Tipos para el procesamiento de notas de egreso desde PDFs.
+ * Soporta múltiples subtipos: "Dispensación A Pacientes", "Abastecimiento Entre Entidades De Msp", etc.
  */
 
 export interface RecipeMedicament {
@@ -36,6 +36,8 @@ export interface RecipeData {
   warehouseOrigin: string;
   egressDate: string;
   egressNumber: string;
+  /** Subtipo del documento, ej: "Dispensación A Pacientes", "Abastecimiento Entre Entidades De Msp" */
+  egressSubtype?: string;
   documentType: string;
   documentNumber: string;
   documentDate: string;

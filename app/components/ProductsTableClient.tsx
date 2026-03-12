@@ -55,12 +55,13 @@ export default function ProductsTableClient({
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reportMenuRef = useRef<HTMLDivElement | null>(null);
 
+  // Valor derivado estable para la dep del efecto de sincronización
+  const urlQueryParam = searchParams.get("q") ?? "";
+
   // Sincronizar searchQuery con la URL cuando cambia el parámetro de búsqueda
   useEffect(() => {
-    const urlQuery = searchParams.get("q") || "";
-    // Solo actualizar si el valor de la URL es diferente del estado
-    setSearchQuery(urlQuery);
-  }, [searchParams.get("q")]);
+    setSearchQuery(urlQueryParam);
+  }, [urlQueryParam]);
 
   // Función auxiliar para obtener los filtros actuales del URL
   const getCurrentFilters = useCallback((): FilterOptions => {

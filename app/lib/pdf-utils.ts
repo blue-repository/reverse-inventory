@@ -113,11 +113,25 @@ interface Column {
 }
 
 /**
- * Valida que el PDF sea una receta válida según el tipo de documento
+ * Valida que el PDF sea una nota de egreso válida.
+ * Acepta cualquier subtipo de NOTA DE EGRESO que contenga la tabla de productos (N° SKU).
  */
 export function validateRecipeDocument(text: string): boolean {
-  const validationText = 'NOTA DE EGRESO "Egresos - Dispensación A Pacientes"';
-  return text.includes(validationText);
+  return text.includes('NOTA DE EGRESO') && (text.includes('N\u00b0 SKU') || text.includes('N\u00ba SKU'));
+}
+
+/**
+ * Extrae el subtipo del egreso desde el texto del PDF.
+ * Ej: "Dispensación A Pacientes", "Abastecimiento Entre Entidades De Msp".
+ * Retorna el subtipo encontrado, o undefined si no se puede determinar.
+ */
+export function extractEgressSubtype(text: string): string | undefined {
+  // El patrón en el PDF es: NOTA DE EGRESO "Egresos - <Subtipo>"
+  const match = text.match(/NOTA DE EGRESO\s+["\u201c]Egresos\s+-\s+([^"\u201d\n]+)["\u201d]/);
+  if (match) {
+    return match[1].trim();
+  }
+  return undefined;
 }
 
 // ============================================================================
@@ -416,12 +430,11 @@ export async function parseRecipeDataFromPDF(
     fullText = await extractTextFromPDF(buffer);
   }
 
-  // Validar que sea una receta válida
+  // Validar que sea una nota de egreso válida
   if (!validateRecipeDocument(fullText)) {
-    // Retornar error de validación sin lanzar excepción
     return {
       success: false,
-      error: 'Documento no válido: El documento debe ser una "NOTA DE EGRESO" con formato específico.',
+      error: 'Documento no válido: El archivo debe ser una "NOTA DE EGRESO" del sistema MSP con tabla de productos (N° SKU).',
     };
   }
 
@@ -982,12 +995,11 @@ function extractDateFromText(text: string): string {
  * @deprecated Usar parseRecipeDataFromPDF() para mejor precisión con coordenadas
  */
 export function parseRecipeData(text: string): RecipeData | { success: false; error: string } {
-  // Validar que sea una receta válida
+  // Validar que sea una nota de egreso válida
   if (!validateRecipeDocument(text)) {
-    // Retornar error de validación sin lanzar excepción
     return {
       success: false,
-      error: 'Documento no válido: no contiene "Egresos - Dispensación A Pacientes"',
+      error: 'Documento no válido: El archivo debe ser una "NOTA DE EGRESO" del sistema MSP con tabla de productos (N° SKU).',
     };
   }
 
@@ -1005,6 +1017,7 @@ export function parseRecipeData(text: string): RecipeData | { success: false; er
     warehouseOrigin: header.warehouseOrigin || "BODEGA DE FARMACIA BAGATELA",
     egressDate: header.egressDate || extractDateFromText(text),
     egressNumber: normalizeEgressNumber(header.egressNumber),
+    egressSubtype: extractEgressSubtype(text),
     documentType: header.documentType || "Receta",
     documentNumber: header.documentNumber || "",
     documentDate: header.documentDate || "",

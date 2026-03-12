@@ -25,6 +25,7 @@ interface ImportPdfWidgetProps {
   onRemovePdf: (pdfId: string) => void;
   onOpenPdf: (pdfId: string) => void;
   onToggleExpanded: () => void;
+  onMinimize: () => void;
   onSearchChange: (value: string) => void;
   onToggleGroup: (pdfId: string) => void;
   onToggleNegative: (pdfId: string, sku: string, checked: boolean) => void;
@@ -54,6 +55,7 @@ export function ImportPdfWidget({
   onRemovePdf,
   onOpenPdf,
   onToggleExpanded,
+  onMinimize,
   onSearchChange,
   onToggleGroup,
   onToggleNegative,
@@ -81,6 +83,7 @@ export function ImportPdfWidget({
             onRemovePdf={onRemovePdf}
             onOpenPdf={onOpenPdf}
             onToggleExpanded={onToggleExpanded}
+            onMinimize={onMinimize}
             isExpanded={isExpanded}
           />
 

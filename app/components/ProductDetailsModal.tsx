@@ -274,12 +274,12 @@ export default function ProductDetailsModal({
                   if (daysUntil < 0) {
                     statusColor = "bg-red-50 border-red-200 text-red-700";
                     statusLabel = "Vencido";
-                  } else if (daysUntil <= 7) {
+                  } else if (daysUntil <= 30) {
                     statusColor = "bg-red-50 border-red-200 text-red-700";
                     statusLabel = "Crítico";
-                  } else if (daysUntil <= 15) {
+                  } else if (daysUntil <= 90) {
                     statusColor = "bg-yellow-50 border-yellow-200 text-yellow-700";
-                    statusLabel = "Alerta";
+                    statusLabel = "Por Vencer";
                   }
 
                   return (

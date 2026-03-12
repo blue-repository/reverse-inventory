@@ -52,8 +52,8 @@ export default function BatchesModal({
     }
     const days = getDaysUntilExpiration(expirationDate);
     if (days < 0) return { label: "Vencido", color: "bg-red-100 text-red-800" };
-    if (days <= 7) return { label: "Crítico", color: "bg-red-100 text-red-800" };
-    if (days <= 15) return { label: "Alerta", color: "bg-yellow-100 text-yellow-800" };
+    if (days <= 30) return { label: "Crítico", color: "bg-red-100 text-red-800" };
+    if (days <= 90) return { label: "Por Vencer", color: "bg-yellow-100 text-yellow-800" };
     return { label: "Normal", color: "bg-green-100 text-green-800" };
   };
 
@@ -75,7 +75,7 @@ export default function BatchesModal({
   const activeBatchesNoStock = activeBatches.filter((b) => b.stock <= 0);
   const expiringBatches = activeBatchesWithStock.filter((b) => {
     const days = getDaysUntilExpiration(b.expiration_date);
-    return days >= 0 && days <= 15;
+    return days >= 0 && days <= 90;
   });
   const expiredBatches = activeBatchesWithStock.filter(
     (b) => getDaysUntilExpiration(b.expiration_date) < 0
@@ -109,7 +109,7 @@ export default function BatchesModal({
 
     if (filters.total) return true;
     if (filters.active) return batch.stock > 0;
-    if (filters.expiring) return batch.stock > 0 && days >= 0 && days <= 15;
+    if (filters.expiring) return batch.stock > 0 && days >= 0 && days <= 90;
     if (filters.expired) return batch.stock > 0 && days < 0;
     if (filters.noStock) return batch.stock <= 0;
 
