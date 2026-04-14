@@ -16,6 +16,7 @@ interface CreateRecipeEgressOptions {
   allowedNegativeSkus?: string[];
   skipDuplicateCheck?: boolean;
   dryRun?: boolean;
+  justCreatedSkus?: string[];
 }
 
 interface MissingProductDraft {
@@ -68,6 +69,7 @@ export async function createRecipeEgress(
 
     const targetSkuSet = new Set(options.targetSkus || recipeData.medicaments.map((m) => m.sku));
     const allowedNegativeSkuSet = new Set(options.allowedNegativeSkus || []);
+    const justCreatedSkuSet = new Set(options.justCreatedSkus || []);
     const medicamentsToProcess = recipeData.medicaments.filter((m) => targetSkuSet.has(m.sku));
 
     if (medicamentsToProcess.length === 0) {
@@ -186,7 +188,7 @@ export async function createRecipeEgress(
         continue;
       }
 
-      if (hasBatchNumber) {
+      if (hasBatchNumber && !justCreatedSkuSet.has(medicament.sku)) {
         movements.push({
           product_id: product.id,
           quantity: medicament.quantity,
@@ -445,12 +447,46 @@ export async function createMissingProductsAndRegisterRecipeEgress(
             error: "CREATE_PRODUCT_FAILED",
           };
         }
+      } else if (productDraft.batch_number && productDraft.batch_number.trim()) {
+        // Product already exists — create additional batch if batch_number is provided
+        const today = new Date().toISOString().split("T")[0];
+        const batchResult = await recordMovementsWithBatchHandling([
+          {
+            product_id: existingProduct.id,
+            quantity: stock,
+            type: "entrada",
+            reason: "Lote adicional desde carga de receta PDF",
+            recorded_by: "Sistema",
+            movement_date: productDraft.issue_date || today,
+            batchHandling: {
+              batchInfo: {
+                batch_number: productDraft.batch_number.trim(),
+                issue_date: productDraft.issue_date || today,
+                expiration_date: productDraft.expiration_date || "",
+                shelf: productDraft.shelf || "",
+                drawer: productDraft.drawer || "",
+                section: productDraft.section || "",
+                location_notes: productDraft.location_notes || "",
+              },
+            },
+          },
+        ]);
+        if (!batchResult.success) {
+          console.warn(
+            `No se pudo crear lote adicional para SKU ${productDraft.sku}: ${batchResult.error}`
+          );
+        }
       }
     }
+
+    const createdSkus = products
+      .map((p) => p.sku)
+      .filter((sku) => sku && sku.trim().length > 0);
 
     const egressResult = await createRecipeEgress(recipeData, {
       allowedNegativeSkus,
       dryRun: !executeEgress,
+      justCreatedSkus: createdSkus,
     });
 
     if (!egressResult.success) {

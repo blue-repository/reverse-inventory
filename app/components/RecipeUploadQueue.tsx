@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Product } from "@/app/types/product";
 import {
-  InsufficientStockItem,
   MissingRecipeMedicament,
   ProcessingResult,
   RecipeData,
@@ -169,13 +168,11 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
   };
 
   /**
-   * Maneja la selección de archivos
+   * Procesa una lista de archivos (usado desde input y drag & drop)
    */
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.currentTarget.files;
-    if (!files) return;
+  const processFileList = async (filesList: File[]) => {
+    if (filesList.length === 0) return;
 
-    const filesList = Array.from(files);
     const previewUrls = await Promise.all(filesList.map((file) => generatePdfThumbnail(file)));
 
     const newItems: QueueItemWithDetails[] = filesList.map((file, index) => {
@@ -203,6 +200,19 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
     setTimeout(() => processQueue(itemsToProcess), 100);
   };
 
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.currentTarget.files;
+    if (!files) return;
+    await processFileList(Array.from(files));
+  };
+
+  const handleFilesDropped = async (files: File[]) => {
+    const pdfFiles = files.filter(
+      (f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")
+    );
+    await processFileList(pdfFiles);
+  };
+
   const processQueue = async (items: QueueItemWithDetails[]) => {
     if (processingRef.current) return;
 
@@ -218,7 +228,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
       );
 
       try {
-        let file = filesMapRef.current.get(item.id);
+        const file = filesMapRef.current.get(item.id);
 
         if (!file) {
           setQueue((prev) =>
@@ -359,6 +369,22 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
       const recipeData = parseResult as RecipeData;
 
+      // Validar duplicados por número de egreso
+      if (recipeData.egressNumber) {
+        const existingEgress = queueRef.current.find(
+          (i) =>
+            i.id !== itemId &&
+            i.extractedRecipeData?.egressNumber === recipeData.egressNumber
+        );
+        if (existingEgress) {
+          return {
+            success: false,
+            message: `Este documento ya fue cargado (Egreso: ${recipeData.egressNumber}). Archivo: ${existingEgress.fileName}`,
+            error: "DUPLICATE_EGRESS",
+          };
+        }
+      }
+
       setQueue((prev) =>
         prev.map((i) => (i.id === itemId ? { ...i, progress: 75 } : i))
       );
@@ -419,16 +445,6 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
     setCollapsedGroups((prev) => ({ ...prev, [itemId]: !prev[itemId] }));
   };
 
-  const toggleMissingSelection = (itemId: string, sku: string, checked: boolean) => {
-    setSelectedMissingByItem((prev) => ({
-      ...prev,
-      [itemId]: {
-        ...(prev[itemId] || {}),
-        [sku]: checked,
-      },
-    }));
-  };
-
   const toggleNegativeSelection = (itemId: string, sku: string, checked: boolean) => {
     setSelectedNegativeByItem((prev) => ({
       ...prev,
@@ -473,7 +489,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
     );
   };
 
-  const applyDecisionsAndProcessAll = async (item: QueueItemWithDetails) => {
+  const applyDecisionsAndProcessAll = async (item: QueueItemWithDetails, createdSkus?: Set<string>) => {
     if (!item.extractedRecipeData) return;
 
     const selections = selectedMissingByItem[item.id] || {};
@@ -482,7 +498,17 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
       (sku) => selections[sku] && !manualResolvedMissingByItem[item.id]?.[sku]
     );
 
-    const productsToCreate = selectedSkus.map((sku) => drafts[sku]).filter(Boolean);
+    // Deduplicate: skip SKUs already sent from a previous item with the SAME batch_number.
+    // If batch_number differs, still send so the server creates the additional batch.
+    const productsToCreate = selectedSkus
+      .map((sku) => drafts[sku])
+      .filter(Boolean)
+      .filter((draft) => {
+        if (!createdSkus) return true;
+        const key = `${draft.sku}::${(draft.batch_number || "").trim()}`;
+        if (createdSkus.has(key)) return false;
+        return true;
+      });
     const invalidStock = productsToCreate.find((draft) => Number(draft.stock) <= 0);
 
     if (invalidStock) {
@@ -520,6 +546,13 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
       const data = (await response.json()) as UploadResultWithDetails;
       applyItemResultUpdate(item.id, { ...data, extractedRecipeData: item.extractedRecipeData });
+
+      // Track created SKU+batch combos to prevent duplicates in subsequent items
+      if (createdSkus) {
+        for (const draft of productsToCreate) {
+          createdSkus.add(`${draft.sku}::${(draft.batch_number || "").trim()}`);
+        }
+      }
 
       const stillMissing = new Set((data.missingMedicaments || []).map((med) => med.sku));
       const manuallyResolved = manualResolvedMissingByItem[item.id] || {};
@@ -707,15 +740,12 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
     ).length;
   }, [selectedNegativeByItem, tableRows]);
 
-  const quickCreateMissingRow = async (row: TableProductRow) => {
+  const quickCreateMissingRow = (row: TableProductRow) => {
     if (!row.missingMedicament) return;
-
-    const item = queue.find((q) => q.id === row.pdfId);
-    if (!item?.extractedRecipeData) return;
+    if (manualResolvedMissingByItem[row.pdfId]?.[row.sku]) return;
 
     const existingDraft = missingDraftsByItem[row.pdfId]?.[row.sku];
     const draft = existingDraft || buildDraftFromMissing(row.missingMedicament);
-    const fullName = getFullMedicamentName(item, row.sku, draft.name);
 
     if (Number(draft.stock) <= 0) {
       applyItemResultUpdate(row.pdfId, {
@@ -726,57 +756,56 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
       return;
     }
 
-    setItemBusy((prev) => ({ ...prev, [row.pdfId]: true }));
+    const newValue = !selectedMissingByItem[row.pdfId]?.[row.sku];
 
-    try {
-      const allowedNegativeSkus = Object.entries(selectedNegativeByItem[row.pdfId] || {})
-        .filter(([, checked]) => checked)
-        .map(([sku]) => sku);
+    // Auto-select/deselect ALL rows with the same SKU across all PDFs
+    const matchingRows = tableRows.filter(
+      (r) => r.sku === row.sku && r.status === "missing" && !manualResolvedMissingByItem[r.pdfId]?.[r.sku]
+    );
 
-      const response = await fetch("/api/process-recipe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createMissingOnly",
-          recipeData: item.extractedRecipeData,
-          productsToCreate: [
-            {
-              ...draft,
-              name: fullName,
-              description: draft.description || fullName,
-              stock: Number(draft.stock),
-            },
-          ],
-          allowedNegativeSkus,
-        }),
-      });
-
-      const data = (await response.json()) as UploadResultWithDetails;
-      applyItemResultUpdate(row.pdfId, { ...data, extractedRecipeData: item.extractedRecipeData });
-
-      const stillMissing = new Set((data.missingMedicaments || []).map((med) => med.sku));
-      if (!stillMissing.has(row.sku)) {
-        setManualResolvedMissingByItem((prev) => ({
-          ...prev,
-          [row.pdfId]: {
-            ...(prev[row.pdfId] || {}),
-            [row.sku]: true,
-          },
-        }));
+    setSelectedMissingByItem((prev) => {
+      const next = { ...prev };
+      for (const match of matchingRows) {
+        next[match.pdfId] = {
+          ...(next[match.pdfId] || {}),
+          [match.sku]: newValue,
+        };
       }
+      return next;
+    });
+  };
 
-      if (data.success) {
-        router.refresh();
+  const bulkCreateMissingForGroup = (pdfId: string) => {
+    // Find all unresolved missing rows for this PDF group
+    const missingRows = tableRows.filter(
+      (r) =>
+        r.pdfId === pdfId &&
+        r.status === "missing" &&
+        !manualResolvedMissingByItem[r.pdfId]?.[r.sku] &&
+        !selectedMissingByItem[r.pdfId]?.[r.sku]
+    );
+
+    if (missingRows.length === 0) return;
+
+    // Collect all unique SKUs to select (across all PDFs for dedup)
+    const skusToSelect = new Set(missingRows.map((r) => r.sku));
+    const allMatchingRows = tableRows.filter(
+      (r) =>
+        skusToSelect.has(r.sku) &&
+        r.status === "missing" &&
+        !manualResolvedMissingByItem[r.pdfId]?.[r.sku]
+    );
+
+    setSelectedMissingByItem((prev) => {
+      const next = { ...prev };
+      for (const match of allMatchingRows) {
+        next[match.pdfId] = {
+          ...(next[match.pdfId] || {}),
+          [match.sku]: true,
+        };
       }
-    } catch (error) {
-      applyItemResultUpdate(row.pdfId, {
-        success: false,
-        message: error instanceof Error ? error.message : "Error al crear el producto faltante",
-        error: "REQUEST_ERROR",
-      });
-    } finally {
-      setItemBusy((prev) => ({ ...prev, [row.pdfId]: false }));
-    }
+      return next;
+    });
   };
 
   const processAll = async () => {
@@ -784,10 +813,13 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
     const itemsToProcess = queue.filter((item) => item.extractedRecipeData);
 
+    // Track SKUs already created across items to avoid duplicates
+    const createdSkus = new Set<string>();
+
     setIsSubmittingEgress(true);
     try {
       for (const item of itemsToProcess) {
-        await applyDecisionsAndProcessAll(item);
+        await applyDecisionsAndProcessAll(item, createdSkus);
       }
     } finally {
       setIsSubmittingEgress(false);
@@ -896,26 +928,23 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
   if (queue.length === 0) {
     return (
       <div
-        className="fixed right-0 bottom-24 z-40 group flex items-center"
+        className="fixed right-0 bottom-24 z-40 group flex items-stretch"
         style={{ transform: 'translateX(calc(100% - 36px))', transition: 'transform 0.25s ease' }}
         onMouseEnter={e => (e.currentTarget.style.transform = 'translateX(0)')}
         onMouseLeave={e => (e.currentTarget.style.transform = 'translateX(calc(100% - 36px))')}
         onFocus={e => (e.currentTarget.style.transform = 'translateX(0)')}
         onBlur={e => (e.currentTarget.style.transform = 'translateX(calc(100% - 36px))')}
       >
-        {/* Pestaña visible (ícono siempre a la vista) */}
-        <div className="flex-shrink-0 flex items-center justify-center w-9 h-12 bg-blue-600 rounded-l-lg shadow-lg cursor-pointer" aria-hidden="true">
-          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        </div>
-        {/* Botón expandido que aparece al hacer hover */}
+        {/* Pestaña + botón como un solo bloque unificado */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 bg-blue-600 text-white pl-2 pr-4 py-3 text-sm font-medium whitespace-nowrap hover:bg-blue-700 transition-colors shadow-lg rounded-none"
+          className="flex items-center gap-2 bg-blue-600 text-white px-3 py-2.5 text-sm font-medium whitespace-nowrap hover:bg-blue-700 transition-colors shadow-lg rounded-l-lg"
           title="Cargar recetas en PDF"
         >
-          Cargar Recetas
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span className="hidden group-hover:inline">Cargar Recetas</span>
         </button>
         <input
           ref={fileInputRef}
@@ -975,6 +1004,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
         activePdfId={activePdfId}
         collapsedGroups={collapsedGroups}
         search={search}
+        missingSelections={selectedMissingByItem}
         negativeSelections={selectedNegativeByItem}
         manualResolvedMissing={manualResolvedMissingByItem}
         itemBusy={itemBusy}
@@ -991,37 +1021,16 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
         onSearchChange={setSearch}
         onToggleGroup={toggleGroupCollapsed}
         onToggleNegative={toggleNegativeSelection}
-        onQuickCreateMissing={(row) => {
-          if (row.missingMedicament) {
-            toggleMissingSelection(row.pdfId, row.sku, true);
-          }
-          quickCreateMissingRow(row);
-        }}
-        onOpenMissingForm={(row) => {
-          if (row.missingMedicament) {
-            toggleMissingSelection(row.pdfId, row.sku, true);
-          }
-          openMissingProductForm(row.pdfId, row.sku);
-        }}
+        onQuickCreateMissing={quickCreateMissingRow}
+        onBulkCreateMissing={bulkCreateMissingForGroup}
+        onOpenMissingForm={(row) => openMissingProductForm(row.pdfId, row.sku)}
         onApproveAllNegative={approveAllNegative}
         onClearNegativeApprovals={clearNegativeApprovals}
         onCancel={resetWidget}
         onProcessAll={processAll}
+        onAddMore={() => fileInputRef.current?.click()}
+        onFilesDropped={handleFilesDropped}
       />
-
-      <div className="fixed bottom-6 left-6 z-50 flex items-center gap-2">
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-md hover:bg-slate-50"
-          disabled={isProcessing}
-        >
-          + Anadir PDFs
-        </button>
-
-        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow">
-          {status.completed + status.errors + status.processing} / {status.total} archivos | {overallProgress}% total
-        </div>
-      </div>
 
       <input
         ref={fileInputRef}

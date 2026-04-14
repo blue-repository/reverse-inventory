@@ -447,7 +447,222 @@ export async function parseRecipeDataFromPDF(
     return recipeData;
   }
 
+  // En el navegador: intentar extracción de tabla basada en coordenadas
+  // para capturar correctamente celdas con texto multilínea
+  if (!isServer) {
+    try {
+      const coordMedicaments = await parseMedicamentsFromCoords(buffer);
+      if (coordMedicaments.length > 0) {
+        (recipeData as RecipeData).medicaments = coordMedicaments;
+        const coordTotal = coordMedicaments.reduce((sum, m) => sum + m.total, 0);
+        if (!(recipeData as RecipeData).total) {
+          (recipeData as RecipeData).total = coordTotal;
+        }
+        console.log(
+          `[parseRecipeDataFromPDF] Extracción por coordenadas exitosa: ${coordMedicaments.length} productos`
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "[parseRecipeDataFromPDF] Falló extracción por coordenadas, usando texto plano:",
+        err
+      );
+    }
+  }
+
   return recipeData as RecipeData;
+}
+
+// ============================================================================
+// EXTRACCIÓN DE TABLA POR COORDENADAS (pdfjs-dist, solo navegador)
+// ============================================================================
+
+/**
+ * Parsea la tabla de medicamentos/productos usando las coordenadas (x, y)
+ * de cada elemento de texto extraído con pdfjs-dist.
+ *
+ * Ventajas sobre el método basado en texto plano:
+ * - Captura correctamente celdas con texto que ocupa múltiples líneas
+ *   (ej: "Catéter Urinario Uretral, 14 Fr, Tres Vías")
+ * - Asigna cada fragmento de texto a su columna correcta usando posición X
+ * - Agrupa fragmentos de la misma celda por rango de Y
+ */
+async function parseMedicamentsFromCoords(
+  buffer: ArrayBuffer
+): Promise<RecipeMedicament[]> {
+  const allItems = await extractTextItemsFromPDF(buffer);
+  if (allItems.length === 0) return [];
+
+  // ── Paso 1: Localizar la fila de encabezado ──────────────────────────
+  const skuItem = allItems.find((i) => i.text === "SKU");
+  if (!skuItem) return [];
+
+  const headerY = skuItem.y;
+  const yTol = 3;
+
+  // Items de la línea principal del encabezado
+  const headerPrimaryItems = allItems
+    .filter((i) => Math.abs(i.y - headerY) < yTol)
+    .sort((a, b) => a.x - b.x);
+
+  // Incluir segunda línea del encabezado (ej: "Caducidad", "achada")
+  const headerAllItems = allItems
+    .filter((i) => i.y <= headerY + yTol && i.y >= headerY - 15)
+    .sort((a, b) => a.x - b.x);
+
+  // ── Paso 2: Detectar posiciones X de cada columna ────────────────────
+  const findX = (
+    keyword: string,
+    items: TextItem[] = headerPrimaryItems
+  ): number | undefined => {
+    const found = items.find((i) => i.text.includes(keyword));
+    return found?.x;
+  };
+
+  const skuX = findX("SKU")!;
+  const nombreX = findX("Nombre");
+  const unidadX = findX("Unidad");
+  const loteX = findX("Lote");
+  const fechaX = findX("Fecha");
+  const cantX = findX("Cant");
+  const costoX = findX("Costo");
+  const totalX = findX("Total");
+
+  // N° es la columna más a la izquierda (antes de SKU)
+  const nItems = headerPrimaryItems.filter((i) => i.x < skuX);
+  const nX = nItems.length > 0 ? nItems[0].x : skuX - 30;
+
+  // Construir definiciones de columnas ordenadas por X
+  type ColDef = { name: string; x: number };
+  const cols: ColDef[] = [{ name: "N", x: nX }, { name: "SKU", x: skuX }];
+  if (nombreX !== undefined) cols.push({ name: "Nombre", x: nombreX });
+  if (unidadX !== undefined) cols.push({ name: "Unidad", x: unidadX });
+  if (loteX !== undefined) cols.push({ name: "Lote", x: loteX });
+  if (fechaX !== undefined) cols.push({ name: "Fecha", x: fechaX });
+  if (cantX !== undefined) cols.push({ name: "Cantidad", x: cantX });
+  if (costoX !== undefined) cols.push({ name: "Costo", x: costoX });
+  if (totalX !== undefined) cols.push({ name: "Total", x: totalX });
+  cols.sort((a, b) => a.x - b.x);
+
+  if (cols.length < 5) return [];
+
+  // Límites de cada columna: desde su X hasta el X de la siguiente columna
+  const bounds = cols.map((c, i) => ({
+    name: c.name,
+    left: c.x - 5,
+    right: i + 1 < cols.length ? cols[i + 1].x - 5 : Infinity,
+  }));
+
+  // ── Paso 3: Límites verticales de la tabla ───────────────────────────
+  const headerBottomY = Math.min(...headerAllItems.map((i) => i.y));
+
+  const endItems = allItems.filter(
+    (i) =>
+      i.text.includes("OBSERVACIONES") || i.text.startsWith("TOTAL(")
+  );
+  const tableEndY =
+    endItems.length > 0 ? Math.max(...endItems.map((i) => i.y)) : 0;
+
+  // ── Paso 4: Filtrar items del área de datos ──────────────────────────
+  const tableItems = allItems
+    .filter((i) => i.y < headerBottomY - 2 && i.y > tableEndY)
+    .sort((a, b) => b.y - a.y || a.x - b.x);
+
+  if (tableItems.length === 0) return [];
+
+  // ── Paso 5: Detectar inicio de cada fila lógica ──────────────────────
+  const nBound = bounds.find((b) => b.name === "N")!;
+  const rowStarters = tableItems
+    .filter(
+      (i) =>
+        /^\d+$/.test(i.text.trim()) &&
+        i.x >= nBound.left &&
+        i.x < nBound.right
+    )
+    .sort((a, b) => b.y - a.y);
+
+  if (rowStarters.length === 0) return [];
+
+  // ── Paso 6: Extraer medicamentos ─────────────────────────────────────
+  const medicaments: RecipeMedicament[] = [];
+
+  for (let r = 0; r < rowStarters.length; r++) {
+    const yTop = rowStarters[r].y + yTol;
+    const yBot =
+      r + 1 < rowStarters.length ? rowStarters[r + 1].y : tableEndY;
+
+    // Items que pertenecen a esta fila
+    const rowItems = tableItems.filter(
+      (i) => i.y <= yTop && i.y > yBot
+    );
+
+    // Asignar cada item a su columna
+    const colTexts: Record<string, TextItem[]> = {};
+    for (const b of bounds) colTexts[b.name] = [];
+
+    for (const item of rowItems) {
+      const col = bounds.find(
+        (b) => item.x >= b.left && item.x < b.right
+      );
+      if (col) colTexts[col.name].push(item);
+    }
+
+    // Unir items de cada columna manteniendo orden de lectura
+    const mergeCol = (name: string): string => {
+      const citems = colTexts[name] || [];
+      if (citems.length === 0) return "";
+
+      // Agrupar por nivel Y (items en la misma línea visual)
+      const lineGroups: { y: number; items: TextItem[] }[] = [];
+      for (const item of citems) {
+        const existing = lineGroups.find(
+          (g) => Math.abs(g.y - item.y) < yTol
+        );
+        if (existing) {
+          existing.items.push(item);
+        } else {
+          lineGroups.push({ y: item.y, items: [item] });
+        }
+      }
+
+      // Ordenar: arriba → abajo, izquierda → derecha dentro de cada línea
+      lineGroups.sort((a, b) => b.y - a.y);
+      return lineGroups
+        .map((g) => {
+          g.items.sort((a, b) => a.x - b.x);
+          return g.items.map((it) => it.text).join(" ");
+        })
+        .join(" ")
+        .trim();
+    };
+
+    const sku = mergeCol("SKU");
+    if (!sku) continue;
+
+    const name = mergeCol("Nombre");
+    const batch = mergeCol("Lote");
+    const fechaRaw = mergeCol("Fecha");
+    const cantRaw = mergeCol("Cantidad");
+    const costoRaw = mergeCol("Costo");
+    const totalRaw = mergeCol("Total");
+
+    // Extraer fecha YYYY-MM-DD
+    const dateMatch = fechaRaw.match(/\d{4}-\d{2}-\d{2}/);
+    const expirationDate = dateMatch ? dateMatch[0] : fechaRaw;
+
+    medicaments.push({
+      sku,
+      name: name.replace(/\s+/g, " "),
+      unit: "Caja",
+      batch,
+      expirationDate,
+      quantity: parseInt(cantRaw, 10) || 0,
+      unitCost: parseFloat(costoRaw) || 0,
+      total: parseFloat(totalRaw) || 0,
+    });
+  }
+
+  return medicaments;
 }
 
 // ============================================================================
@@ -917,61 +1132,73 @@ function parseMedicaments(text: string): RecipeMedicament[] {
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  // Estrategia principal: parsear cada fila desde el bloque completo, permitiendo
-  // descripciones multilinea y lotes alfanumericos (ej: 25OB0810, DI24104).
-  const rowPattern =
-    /(?:^|\n)\s*\d+\s+([A-Z0-9-]{10,})\s+([\s\S]*?)\s+U\s+([A-Z0-9-]{4,20})\s+(\d{4}-\d{2}-\d{2})\s+(\d+)\s+([\d.]+)\s+([\d.]+)(?=\s+\d+\s+[A-Z0-9-]{10,}|\s*$)/g;
+  // Estrategia: agrupar líneas en filas lógicas.
+  // Una fila nueva comienza cuando una línea inicia con un número seguido de un SKU.
+  // Las líneas subsiguientes que NO empiezan con ese patrón son continuaciones
+  // del nombre del producto (texto que desbordó a otra línea visual en el PDF).
+  const rowStartRegex = /^\d+\s+[A-Z0-9-]{10,}/;
 
-  let rowMatch: RegExpExecArray | null;
-  while ((rowMatch = rowPattern.exec(tableBlock)) !== null) {
-    const sku = rowMatch[1];
-    const name = rowMatch[2].trim().replace(/\s+/g, " ");
-    const batch = rowMatch[3];
-    const expirationDate = rowMatch[4];
-    const quantity = parseInt(rowMatch[5], 10);
-    const unitCost = parseFloat(rowMatch[6]);
-    const total = parseFloat(rowMatch[7]);
+  const logicalRows: string[][] = [];
+  let currentRowLines: string[] = [];
+
+  for (const line of lines) {
+    if (rowStartRegex.test(line)) {
+      if (currentRowLines.length > 0) logicalRows.push(currentRowLines);
+      currentRowLines = [line];
+    } else if (currentRowLines.length > 0) {
+      currentRowLines.push(line);
+    }
+  }
+  if (currentRowLines.length > 0) logicalRows.push(currentRowLines);
+
+  // Paso 3: Parsear cada fila lógica
+  // Formato principal: NUM SKU NOMBRE U LOTE FECHA CANTIDAD COSTO TOTAL
+  // Las líneas de continuación solo contienen texto del nombre desbordado.
+  const mainLineRegex =
+    /^\d+\s+([A-Z0-9-]{10,})\s+(.+?)\s+U\s+([A-Z0-9-]{4,20})\s+(\d{4}-\d{2}-\d{2})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s*$/;
+
+  for (const rowLines of logicalRows) {
+    const mainLine = rowLines[0];
+    const match = mainLine.match(mainLineRegex);
+    if (!match) continue;
+
+    let name = match[2].trim();
+
+    // Agregar líneas de continuación al nombre
+    for (let j = 1; j < rowLines.length; j++) {
+      const cont = rowLines[j].trim();
+      if (cont) name += " " + cont;
+    }
 
     medicaments.push({
-      sku,
-      name,
+      sku: match[1],
+      name: name.replace(/\s+/g, " ").trim(),
       unit: "Caja",
-      batch,
-      expirationDate,
-      quantity,
-      unitCost,
-      total,
+      batch: match[3],
+      expirationDate: match[4],
+      quantity: parseInt(match[5], 10),
+      unitCost: parseFloat(match[6]),
+      total: parseFloat(match[7]),
     });
   }
 
-  // Fallback para casos simples donde cada item venga en una sola linea.
+  // Fallback: si no se detectaron filas lógicas, intentar con regex multilínea
+  // sobre el bloque completo (por compatibilidad).
   if (medicaments.length === 0) {
-    const medicamentLinePattern =
-      /^\d+\s+([A-Z0-9-]{10,})\s+(.+?)\s+U\s+([A-Z0-9-]{4,20})\s+(\d{4}-\d{2}-\d{2})\s+(\d+)\s+([\d.]+)\s+([\d.]+)$/;
+    const rowPattern =
+      /(?:^|\n)\s*\d+\s+([A-Z0-9-]{10,})\s+([\s\S]*?)\s+U\s+([A-Z0-9-]{4,20})\s+(\d{4}-\d{2}-\d{2})\s+(\d+)\s+([\d.]+)\s+([\d.]+)(?=\s+\d+\s+[A-Z0-9-]{10,}|\s*$)/g;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const match = line.match(medicamentLinePattern);
-
-      if (!match) continue;
-
-      const sku = match[1];
-      const name = match[2].trim().replace(/\s+/g, " ");
-      const batch = match[3];
-      const expirationDate = match[4];
-      const quantity = parseInt(match[5], 10);
-      const unitCost = parseFloat(match[6]);
-      const total = parseFloat(match[7]);
-
+    let rowMatch: RegExpExecArray | null;
+    while ((rowMatch = rowPattern.exec(tableBlock)) !== null) {
       medicaments.push({
-        sku,
-        name,
+        sku: rowMatch[1],
+        name: rowMatch[2].trim().replace(/\s+/g, " "),
         unit: "Caja",
-        batch,
-        expirationDate,
-        quantity,
-        unitCost,
-        total,
+        batch: rowMatch[3],
+        expirationDate: rowMatch[4],
+        quantity: parseInt(rowMatch[5], 10),
+        unitCost: parseFloat(rowMatch[6]),
+        total: parseFloat(rowMatch[7]),
       });
     }
   }
