@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { useKeenSlider } from "keen-slider/react";
 import "keen-slider/keen-slider.min.css";
-import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Minus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Minus, Plus } from "lucide-react";
 import { PdfSummary } from "@/app/components/import-pdf-widget/types";
 import { PdfCard } from "@/app/components/import-pdf-widget/PdfCard";
 import { Button } from "@/app/components/ui/button";
@@ -17,6 +17,7 @@ interface PdfCarouselProps {
   onToggleExpanded: () => void;
   onMinimize: () => void;
   isExpanded: boolean;
+  onAddMore: () => void;
 }
 
 export function PdfCarousel({
@@ -28,6 +29,7 @@ export function PdfCarousel({
   onToggleExpanded,
   onMinimize,
   isExpanded,
+  onAddMore,
 }: PdfCarouselProps) {
   const initialIndex = useMemo(() => {
     if (!activePdfId) return 0;
@@ -92,6 +94,18 @@ export function PdfCarousel({
             />
           </div>
         ))}
+        {/* Card para agregar más PDFs */}
+        <div className="keen-slider__slide !w-[170px] !min-w-[170px] !max-w-[170px] !shrink-0" key="add-more">
+          <button
+            type="button"
+            onClick={onAddMore}
+            className="flex h-full min-h-[200px] w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white p-4 text-slate-400 transition-all hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-500"
+            title="Agregar más archivos PDF"
+          >
+            <Plus className="h-8 w-8" />
+            <span className="text-xs font-medium">Agregar PDFs</span>
+          </button>
+        </div>
       </div>
     </div>
   );

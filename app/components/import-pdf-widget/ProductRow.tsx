@@ -54,6 +54,7 @@ export function ProductRow({ row, negativeApproved, onToggleNegative }: ProductR
           </Badge>
         )}
       </TableCell>
+      <TableCell />
     </TableRow>
   );
 }
