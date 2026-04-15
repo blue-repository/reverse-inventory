@@ -23,7 +23,7 @@ import { createRecipeEgress, createMissingProductsAndRegisterRecipeEgress, creat
 import { RecipeData } from "@/app/types/recipe";
 
 interface ProcessRecipeRequest {
-  action?: "process" | "previewRecipeEgress" | "retryRecipeEgress" | "createMissingOnly" | "createMissingAndRetry";
+  action?: "process" | "previewRecipeEgress" | "retryRecipeEgress" | "createMissingOnly" | "createMissingAndRetry" | "createSingleProduct";
   recipeData?: RecipeData; // NUEVO: datos ya procesados
   pdfText?: string;
   pdfBase64?: string;
