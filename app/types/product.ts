@@ -71,6 +71,7 @@ export type InventoryMovement = {
   reason?: string | null;
   notes?: string | null;
   reporting_unit?: string | null;
+  from_pdf_movement?: boolean | null;
   created_at: string;
   updated_at: string;
 };

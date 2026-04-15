@@ -16,7 +16,7 @@ interface ReportSummary {
   toDate: string;
 }
 
-type ReportType = "egresos" | "ingresos";
+type ReportType = "egresos" | "ingresos" | "notas-egreso";
 
 interface ReportsModalProps {
   isOpen: boolean;
@@ -233,8 +233,9 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       const workbook = new ExcelJS.Workbook();
       
       // Hoja principal con datos
-      const mainSheet = workbook.addWorksheet(reportType === 'egresos' ? 'Egresos' : 'Ingresos');
-      const columns = reportType === "egresos" ? egressColumns : ingressColumns;
+      const sheetName = reportType === 'egresos' ? 'Egresos' : reportType === 'notas-egreso' ? 'Notas de Egreso' : 'Ingresos';
+      const mainSheet = workbook.addWorksheet(sheetName);
+      const columns = reportType === "egresos" ? egressColumns : reportType === "notas-egreso" ? notasEgresoColumns : ingressColumns;
 
       // Configurar columnas (sin la columna lotes)
       const mainColumns = columns.filter(col => col.key !== 'lote');
@@ -430,7 +431,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
         format: 'a4'
       });
 
-      const columns = reportType === "egresos" ? egressColumns : ingressColumns;
+      const columns = reportType === "egresos" ? egressColumns : reportType === "notas-egreso" ? notasEgresoColumns : ingressColumns;
       const mainColumns = columns.filter(col => col.key !== 'lote');
       const headers = mainColumns.map(col => col.label);
       const data = reportData.map(row => 
@@ -440,7 +441,8 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       // Página 1: Datos principales
       // Título
       doc.setFontSize(14);
-      doc.text(`Reporte de ${reportType === 'egresos' ? 'Egresos' : 'Ingresos'}`, 14, 15);
+      const pdfTitle = reportType === 'egresos' ? 'Egresos Generales' : reportType === 'notas-egreso' ? 'Notas de Egreso' : 'Ingresos';
+      doc.text(`Reporte de ${pdfTitle}`, 14, 15);
       
       if (summary) {
         doc.setFontSize(9);
@@ -544,6 +546,18 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
     { key: "usuario", label: "Usuario", main: false },
   ];
 
+  const notasEgresoColumns = [
+    { key: "codigo", label: "Código", main: true },
+    { key: "producto", label: "Producto", main: true },
+    { key: "cantidad", label: "Cant.", main: true },
+    { key: "unidad", label: "Unidad", main: true },
+    { key: "motivo", label: "Motivo", main: true },
+    { key: "codigoNotaSuministro", label: "Código Nota Suministro", main: true },
+    { key: "fecha", label: "Fecha", main: true },
+    { key: "hora", label: "Hora", main: false },
+    { key: "notas", label: "Notas", main: false },
+  ];
+
   const ingressColumns = [
     { key: "fecha", label: "Fecha", main: true },
     { key: "hora", label: "Hora", main: true },
@@ -561,7 +575,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
     { key: "usuario", label: "Usuario", main: false },
   ];
 
-  const columns = reportType === "egresos" ? egressColumns : ingressColumns;
+  const columns = reportType === "egresos" ? egressColumns : reportType === "notas-egreso" ? notasEgresoColumns : ingressColumns;
   const mainColumns = columns.filter(col => col.main);
   const detailColumns = columns.filter(col => !col.main);
 
@@ -633,7 +647,8 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                   }}
                   className="w-full h-[34px] px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  <option value="egresos">Egresos</option>
+                  <option value="egresos">Egresos Generales</option>
+                  <option value="notas-egreso">Notas de Egreso</option>
                   <option value="ingresos">Ingresos</option>
                 </select>
               </div>

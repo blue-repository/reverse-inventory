@@ -29,6 +29,7 @@ interface ProcessRecipeRequest {
   pdfBase64?: string;
   fileName?: string;
   allowedNegativeSkus?: string[];
+  justCreatedSkus?: string[];
   productsToCreate?: Array<{
     sku: string;
     batch_number?: string;
@@ -90,6 +91,7 @@ export async function POST(request: NextRequest) {
           if (body.action === "retryRecipeEgress") {
             const retryResult = await createRecipeEgress(recipeData, {
               allowedNegativeSkus: body.allowedNegativeSkus || [],
+              justCreatedSkus: body.justCreatedSkus || [],
             });
 
             const retryStatusCode = retryResult.success ? 200 : 400;

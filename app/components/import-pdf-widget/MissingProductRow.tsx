@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Plus, FileEdit } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Plus, FileEdit, Minus } from "lucide-react";
 import { TableCell, TableRow } from "@/app/components/ui/table";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -56,7 +56,7 @@ export function MissingProductRow({
               className="h-7 gap-1 px-2 text-xs"
               title={confirmed ? "Quitar confirmación" : "Confirmar creación rápida"}
             >
-              <Plus className="h-3 w-3" />
+              {confirmed ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" /> }
               {confirmed ? "Quitar" : "Crear"}
             </Button>
             <Button
