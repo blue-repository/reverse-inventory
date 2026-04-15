@@ -19,7 +19,7 @@ import {
   parseRecipeData,
   parseRecipeDataFromPDF,
 } from "@/app/lib/pdf-utils";
-import { createRecipeEgress, createMissingProductsAndRegisterRecipeEgress } from "@/app/actions/recipes";
+import { createRecipeEgress, createMissingProductsAndRegisterRecipeEgress, createSingleMissingProduct } from "@/app/actions/recipes";
 import { RecipeData } from "@/app/types/recipe";
 
 interface ProcessRecipeRequest {
@@ -106,6 +106,18 @@ export async function POST(request: NextRequest) {
 
             const createAndRetryStatusCode = createAndRetryResult.success ? 200 : 400;
             return NextResponse.json(createAndRetryResult, { status: createAndRetryStatusCode });
+          }
+
+          if (body.action === "createSingleProduct") {
+            const productDraft = body.productsToCreate?.[0];
+            if (!productDraft) {
+              return NextResponse.json(
+                { success: false, message: "No se proporcionaron datos del producto", error: "MISSING_PRODUCT_DATA" },
+                { status: 400 }
+              );
+            }
+            const singleResult = await createSingleMissingProduct(recipeData, productDraft);
+            return NextResponse.json(singleResult, { status: singleResult.success ? 200 : 400 });
           }
 
           if (body.action === "createMissingOnly") {

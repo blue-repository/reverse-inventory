@@ -37,6 +37,18 @@ interface ActiveMissingProductForm {
   sku: string;
 }
 
+export interface BatchProcessingProgress {
+  phase: 'creating-products' | 'registering-egress';
+  currentPdf: number;
+  totalPdfs: number;
+  currentPdfName: string;
+  currentStep: number;
+  totalSteps: number;
+  currentStepLabel: string;
+  /** 0-100 overall percentage */
+  percent: number;
+}
+
 /**
  * Componente para subir y procesar múltiples PDFs de recetas
  * Muestra una cola visual que se puede minimizar/maximizar
@@ -59,6 +71,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
   const [selectedNegativeByItem, setSelectedNegativeByItem] = useState<Record<string, Record<string, boolean>>>({});
   const [manualResolvedMissingByItem, setManualResolvedMissingByItem] = useState<Record<string, Record<string, boolean>>>({});
   const [activeMissingProductForm, setActiveMissingProductForm] = useState<ActiveMissingProductForm | null>(null);
+  const [batchProgress, setBatchProgress] = useState<BatchProcessingProgress | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const processingRef = useRef<boolean>(false);
   const filesMapRef = useRef<Map<string, File>>(new Map());
@@ -489,7 +502,12 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
     );
   };
 
-  const applyDecisionsAndProcessAll = async (item: QueueItemWithDetails, createdSkus?: Set<string>) => {
+  const applyDecisionsAndProcessAll = async (
+    item: QueueItemWithDetails,
+    createdSkus: Set<string> | undefined,
+    pdfIndex: number,
+    totalPdfs: number
+  ) => {
     if (!item.extractedRecipeData) return;
 
     const selections = selectedMissingByItem[item.id] || {};
@@ -499,7 +517,6 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
     );
 
     // Deduplicate: skip SKUs already sent from a previous item with the SAME batch_number.
-    // If batch_number differs, still send so the server creates the additional batch.
     const productsToCreate = selectedSkus
       .map((sku) => drafts[sku])
       .filter(Boolean)
@@ -524,35 +541,92 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
       .filter(([, checked]) => checked)
       .map(([sku]) => sku);
 
+    // Total steps: 1 per product to create + 1 for egress registration
+    const totalSteps = productsToCreate.length + 1;
+
     setItemBusy((prev) => ({ ...prev, [item.id]: true }));
 
     try {
-      const response = await fetch("/api/process-recipe", {
+      // ── Phase 1: Create missing products one by one ──
+      for (let i = 0; i < productsToCreate.length; i++) {
+        const draft = productsToCreate[i];
+        const fullName = getFullMedicamentName(item, draft.sku, draft.name);
+        const currentStep = i + 1;
+        const overallDone = ((pdfIndex * totalSteps + currentStep) / (totalPdfs * totalSteps)) * 100;
+
+        setBatchProgress({
+          phase: 'creating-products',
+          currentPdf: pdfIndex + 1,
+          totalPdfs,
+          currentPdfName: item.fileName,
+          currentStep,
+          totalSteps,
+          currentStepLabel: `Creando: ${fullName}`,
+          percent: Math.round(Math.min(overallDone, 99)),
+        });
+
+        const response = await fetch("/api/process-recipe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "createSingleProduct",
+            recipeData: item.extractedRecipeData,
+            productsToCreate: [
+              {
+                ...draft,
+                name: fullName,
+                description: draft.description || fullName,
+                stock: Number(draft.stock),
+              },
+            ],
+          }),
+        });
+
+        const productResult = await response.json();
+
+        if (!productResult.success) {
+          applyItemResultUpdate(item.id, {
+            success: false,
+            message: productResult.message || `Error al crear producto ${draft.sku}`,
+            error: productResult.error || "CREATE_PRODUCT_FAILED",
+            extractedRecipeData: item.extractedRecipeData,
+          });
+          return;
+        }
+
+        // Track created SKU+batch combos to prevent duplicates in subsequent items
+        if (createdSkus) {
+          createdSkus.add(`${draft.sku}::${(draft.batch_number || "").trim()}`);
+        }
+      }
+
+      // ── Phase 2: Register the egress ──
+      const egressStep = totalSteps;
+      const overallDone = ((pdfIndex * totalSteps + egressStep) / (totalPdfs * totalSteps)) * 100;
+
+      setBatchProgress({
+        phase: 'registering-egress',
+        currentPdf: pdfIndex + 1,
+        totalPdfs,
+        currentPdfName: item.fileName,
+        currentStep: egressStep,
+        totalSteps,
+        currentStepLabel: 'Registrando egreso en inventario…',
+        percent: Math.round(Math.min(overallDone, 99)),
+      });
+
+      const egressResponse = await fetch("/api/process-recipe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "createMissingAndRetry",
+          action: "retryRecipeEgress",
           recipeData: item.extractedRecipeData,
-          productsToCreate: productsToCreate.map((draft) => ({
-            ...draft,
-            name: getFullMedicamentName(item, draft.sku, draft.name),
-            description:
-              draft.description || getFullMedicamentName(item, draft.sku, draft.name),
-            stock: Number(draft.stock),
-          })),
           allowedNegativeSkus,
         }),
       });
 
-      const data = (await response.json()) as UploadResultWithDetails;
+      const data = (await egressResponse.json()) as UploadResultWithDetails;
       applyItemResultUpdate(item.id, { ...data, extractedRecipeData: item.extractedRecipeData });
-
-      // Track created SKU+batch combos to prevent duplicates in subsequent items
-      if (createdSkus) {
-        for (const draft of productsToCreate) {
-          createdSkus.add(`${draft.sku}::${(draft.batch_number || "").trim()}`);
-        }
-      }
 
       const stillMissing = new Set((data.missingMedicaments || []).map((med) => med.sku));
       const manuallyResolved = manualResolvedMissingByItem[item.id] || {};
@@ -817,11 +891,13 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
     const createdSkus = new Set<string>();
 
     setIsSubmittingEgress(true);
+    setBatchProgress(null);
     try {
-      for (const item of itemsToProcess) {
-        await applyDecisionsAndProcessAll(item, createdSkus);
+      for (let i = 0; i < itemsToProcess.length; i++) {
+        await applyDecisionsAndProcessAll(itemsToProcess[i], createdSkus, i, itemsToProcess.length);
       }
     } finally {
+      setBatchProgress(null);
       setIsSubmittingEgress(false);
     }
   };
@@ -1009,6 +1085,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
         manualResolvedMissing={manualResolvedMissingByItem}
         itemBusy={itemBusy}
         isProcessing={isProcessing || isSubmittingEgress}
+        batchProgress={batchProgress}
         unresolvedMissingCount={unresolvedMissingCount}
         unapprovedNegativeCount={unapprovedNegativeCount}
         approvedNegativeCount={approvedNegativeCount}

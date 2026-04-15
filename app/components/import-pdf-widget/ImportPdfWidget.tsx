@@ -7,6 +7,7 @@ import { ProductTable } from "@/app/components/import-pdf-widget/ProductTable";
 import { ImportActionsFooter } from "@/app/components/import-pdf-widget/ImportActionsFooter";
 import { Card } from "@/app/components/ui/card";
 import { PdfSummary, TableProductRow } from "@/app/components/import-pdf-widget/types";
+import { BatchProcessingProgress } from "@/app/components/RecipeUploadQueue";
 
 interface ImportPdfWidgetProps {
   pdfs: PdfSummary[];
@@ -19,6 +20,7 @@ interface ImportPdfWidgetProps {
   manualResolvedMissing: Record<string, Record<string, boolean>>;
   itemBusy: Record<string, boolean>;
   isProcessing: boolean;
+  batchProgress: BatchProcessingProgress | null;
   unresolvedMissingCount: number;
   unapprovedNegativeCount: number;
   approvedNegativeCount: number;
@@ -53,6 +55,7 @@ export function ImportPdfWidget({
   manualResolvedMissing,
   itemBusy,
   isProcessing,
+  batchProgress,
   unresolvedMissingCount,
   unapprovedNegativeCount,
   approvedNegativeCount,
@@ -190,6 +193,7 @@ export function ImportPdfWidget({
           unresolvedMissing={unresolvedMissingCount}
           unapprovedNegative={unapprovedNegativeCount}
           processing={isProcessing}
+          batchProgress={batchProgress}
           onCancel={onCancel}
           onProcess={onProcessAll}
         />
