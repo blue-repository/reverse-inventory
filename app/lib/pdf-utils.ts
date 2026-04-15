@@ -139,7 +139,12 @@ export function extractEgressSubtype(text: string): string | undefined {
 // ============================================================================
 
 /**
- * Extrae todos los elementos de texto con sus coordenadas desde un PDF
+ * Extrae todos los elementos de texto con sus coordenadas desde un PDF.
+ *
+ * MULTI-PAGE: Aplica un offset acumulado en Y para que los items de la página N+1
+ * queden "debajo" de la página N en un espacio de coordenadas unificado.
+ * Sin este offset, pages con los mismos rangos Y producen datos mezclados
+ * (ej: headers de pág.1 se combinan con datos de tabla de pág.2).
  */
 async function extractTextItemsFromPDF(buffer: ArrayBuffer): Promise<TextItem[]> {
   const pdfjs = await loadPdfJs();
@@ -147,9 +152,14 @@ async function extractTextItemsFromPDF(buffer: ArrayBuffer): Promise<TextItem[]>
   const pdf = await loadingTask.promise;
   const allItems: TextItem[] = [];
 
-  // Procesar todas las páginas
+  // Offset acumulado: cada página se desplaza hacia abajo por la altura de
+  // las páginas anteriores.  En coordenadas PDF, Y crece hacia arriba, así
+  // que restamos la altura para que la siguiente página quede "más abajo".
+  let cumulativeYOffset = 0;
+
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1 });
     const textContent = await page.getTextContent();
 
     textContent.items.forEach((item: any) => {
@@ -158,12 +168,15 @@ async function extractTextItemsFromPDF(buffer: ArrayBuffer): Promise<TextItem[]>
         allItems.push({
           text: item.str.trim(),
           x: item.transform[4],
-          y: item.transform[5],
+          y: item.transform[5] + cumulativeYOffset,
           width: item.width,
           height: item.height,
         });
       }
     });
+
+    // Desplazar la siguiente página hacia abajo
+    cumulativeYOffset -= viewport.height;
   }
 
   return allItems;
@@ -470,7 +483,43 @@ export async function parseRecipeDataFromPDF(
     }
   }
 
-  return recipeData as RecipeData;
+  // ── Validación de seguridad para campos críticos del header ──────────
+  // Si la extracción produjo datos inválidos (posible en PDFs con
+  // layout inusual), intentar rescatar los valores desde el texto plano.
+  const rd = recipeData as RecipeData;
+
+  // egressDate debe lucir como YYYY-MM-DD
+  if (!/^\d{4}-\d{2}-\d{2}/.test(rd.egressDate)) {
+    console.warn('[parseRecipeDataFromPDF] egressDate inválido detectado:', rd.egressDate);
+    const dateMatch = fullText.match(/(\d{4}-\d{2}-\d{2})/);
+    if (dateMatch) {
+      rd.egressDate = dateMatch[1];
+    } else {
+      rd.egressDate = new Date().toISOString().split('T')[0];
+    }
+  }
+
+  // egressNumber no debería exceder ~60 caracteres (indicaría datos mezclados)
+  if (rd.egressNumber && rd.egressNumber.length > 60) {
+    console.warn('[parseRecipeDataFromPDF] egressNumber sospechosamente largo, limpiando');
+    // Intentar extraer el patrón real: NNNN-YYYY-EGR-XXXX
+    const numMatch = rd.egressNumber.match(/(\d{3,}-\d{4}-EGR-[\w-]+)/);
+    if (numMatch) {
+      rd.egressNumber = numMatch[1];
+    }
+  }
+
+  // recipientName no debería contener SKUs o patrones de tabla
+  if (rd.recipientName && /[A-Z]\d{2}[A-Z]{2}\d/.test(rd.recipientName)) {
+    console.warn('[parseRecipeDataFromPDF] recipientName contiene datos de tabla, limpiando');
+    // Extraer solo la parte que parece nombre (letras, espacios, tildes)
+    const cleanName = rd.recipientName.match(/^([A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)/u);
+    if (cleanName) {
+      rd.recipientName = cleanName[1].trim();
+    }
+  }
+
+  return rd;
 }
 
 // ============================================================================
@@ -560,8 +609,10 @@ async function parseMedicamentsFromCoords(
     (i) =>
       i.text.includes("OBSERVACIONES") || i.text.startsWith("TOTAL(")
   );
+  // Usar Math.min para obtener el límite inferior real de la tabla,
+  // que en PDFs multi-página puede estar en coordenadas negativas.
   const tableEndY =
-    endItems.length > 0 ? Math.max(...endItems.map((i) => i.y)) : 0;
+    endItems.length > 0 ? Math.min(...endItems.map((i) => i.y)) : 0;
 
   // ── Paso 4: Filtrar items del área de datos ──────────────────────────
   const tableItems = allItems

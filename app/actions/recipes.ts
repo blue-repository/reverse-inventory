@@ -512,6 +512,139 @@ export async function createMissingProductsAndRegisterRecipeEgress(
 }
 
 /**
+ * Crea un SOLO producto faltante de forma ligera, sin ejecutar lógica de egreso.
+ * Diseñado para ser llamado individualmente desde el cliente para evitar timeouts
+ * al procesar muchos productos en una sola petición.
+ */
+export async function createSingleMissingProduct(
+  recipeData: RecipeData,
+  productDraft: MissingProductDraft
+): Promise<{ success: boolean; message: string; error?: string }> {
+  try {
+    const stock = Number(productDraft.stock || 0);
+    const recipeNameBySku = new Map(
+      (recipeData.medicaments || []).map((med) => [med.sku, (med.name || "").trim()])
+    );
+    const fullRecipeName = recipeNameBySku.get(productDraft.sku) || "";
+    const normalizedName =
+      (productDraft.name || "").trim() ||
+      fullRecipeName ||
+      productDraft.sku;
+
+    if (!normalizedName || !productDraft.sku || !Number.isFinite(stock) || stock <= 0) {
+      return {
+        success: false,
+        message: `Datos invalidos para SKU ${productDraft.sku}. Nombre y stock inicial (>0) son obligatorios.`,
+        error: "INVALID_PRODUCT_DATA",
+      };
+    }
+
+    const { data: existingProduct } = await supabase
+      .from("products")
+      .select("id")
+      .eq("barcode", productDraft.sku)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (!existingProduct) {
+      const formData = new FormData();
+      formData.set("name", normalizedName);
+      formData.set("barcode", productDraft.sku);
+      formData.set("stock", String(stock));
+
+      const optionalFields: Array<keyof MissingProductDraft> = [
+        "batch_number",
+        "description",
+        "unit_of_measure",
+        "administration_route",
+        "notes",
+        "issue_date",
+        "expiration_date",
+        "shelf",
+        "drawer",
+        "section",
+        "location_notes",
+        "category",
+        "specialty",
+        "reporting_unit",
+      ];
+
+      optionalFields.forEach((field) => {
+        const value = productDraft[field];
+        if (typeof value === "string" && value.trim()) {
+          formData.set(field, value.trim());
+        }
+      });
+
+      if (!formData.get("description") && fullRecipeName) {
+        formData.set("description", fullRecipeName);
+      }
+
+      const createResult = await createProduct(formData, "Sistema");
+      if (!createResult.success) {
+        return {
+          success: false,
+          message: `No se pudo crear producto SKU ${productDraft.sku}: ${createResult.error || "Error desconocido"}`,
+          error: "CREATE_PRODUCT_FAILED",
+        };
+      }
+
+      return {
+        success: true,
+        message: `Producto ${productDraft.sku} creado exitosamente`,
+      };
+    } else if (productDraft.batch_number && productDraft.batch_number.trim()) {
+      const today = new Date().toISOString().split("T")[0];
+      const batchResult = await recordMovementsWithBatchHandling([
+        {
+          product_id: existingProduct.id,
+          quantity: stock,
+          type: "entrada",
+          reason: "Lote adicional desde carga de receta PDF",
+          recorded_by: "Sistema",
+          movement_date: productDraft.issue_date || today,
+          batchHandling: {
+            batchInfo: {
+              batch_number: productDraft.batch_number.trim(),
+              issue_date: productDraft.issue_date || today,
+              expiration_date: productDraft.expiration_date || "",
+              shelf: productDraft.shelf || "",
+              drawer: productDraft.drawer || "",
+              section: productDraft.section || "",
+              location_notes: productDraft.location_notes || "",
+            },
+          },
+        },
+      ]);
+      if (!batchResult.success) {
+        return {
+          success: false,
+          message: `No se pudo crear lote adicional para SKU ${productDraft.sku}: ${batchResult.error}`,
+          error: "BATCH_CREATION_FAILED",
+        };
+      }
+
+      return {
+        success: true,
+        message: `Lote adicional para ${productDraft.sku} creado exitosamente`,
+      };
+    }
+
+    return {
+      success: true,
+      message: `Producto ${productDraft.sku} ya existe, no se requiere creación`,
+    };
+  } catch (error) {
+    console.error("Error en createSingleMissingProduct:", error);
+    return {
+      success: false,
+      message: `Error inesperado al crear ${productDraft.sku}: ${error instanceof Error ? error.message : "Desconocido"}`,
+      error: "UNEXPECTED_ERROR",
+    };
+  }
+}
+
+/**
  * Obtiene el estado de un egreso por su código de receta
  */
 export async function getEgressStatus(recipeCode: string) {
