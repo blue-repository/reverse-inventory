@@ -154,6 +154,72 @@ export async function createRecipeEgress(
       );
     }
 
+    // Pre-procesamiento: Para justCreatedSkus, asegurar que TODOS los lotes
+    // referenciados en la receta existan antes de construir los movimientos de egreso.
+    // Esto cubre el caso donde un mismo SKU aparece con múltiples lotes en la receta
+    // pero solo se creó un lote durante la fase de creación del producto.
+    if (justCreatedSkuSet.size > 0) {
+      const fallbackExp = new Date(new Date().setFullYear(new Date().getFullYear() + 1))
+        .toISOString()
+        .split("T")[0];
+
+      for (const { medicament, product } of resolvedMedicaments) {
+        if (!justCreatedSkuSet.has(medicament.sku)) continue;
+        if (!(medicament.batch && medicament.batch.trim())) continue;
+        if (existingByProductId.has(product.id)) continue;
+
+        const batchNumber = medicament.batch.trim();
+        const { data: existingBatch } = await supabase
+          .from("product_batches")
+          .select("id, stock")
+          .eq("product_id", product.id)
+          .eq("batch_number", batchNumber)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (!existingBatch || (existingBatch.stock ?? 0) < medicament.quantity) {
+          const deficit = medicament.quantity - (existingBatch?.stock ?? 0);
+          const expDate = (medicament.expirationDate || "").trim() || fallbackExp;
+
+          const batchResult = await recordMovementsWithBatchHandling([{
+            product_id: product.id,
+            quantity: deficit,
+            type: "entrada" as const,
+            reason: "Lote adicional desde carga de receta PDF",
+            notes: `Creacion de lote ${batchNumber} previo a egreso | Vencimiento: ${expDate}`,
+            recorded_by: "Sistema",
+            movement_date: recipeData.egressDate,
+            from_pdf_movement: true,
+            batchHandling: {
+              batchInfo: {
+                batch_number: batchNumber,
+                issue_date: recipeData.egressDate,
+                expiration_date: expDate,
+              },
+            },
+          }]);
+
+          if (!batchResult.success) {
+            return {
+              success: false,
+              message: `Error al crear lote ${batchNumber} para ${medicament.sku}: ${batchResult.error}`,
+              error: "BATCH_CREATION_FAILED",
+            };
+          }
+
+          // Refrescar stock del producto para cálculos posteriores
+          const { data: refreshed } = await supabase
+            .from("products")
+            .select("stock")
+            .eq("id", product.id)
+            .single();
+          if (refreshed) {
+            (product as { stock: number | null }).stock = refreshed.stock;
+          }
+        }
+      }
+    }
+
     for (const item of resolvedMedicaments) {
       const { medicament, product } = item;
       const hasBatchNumber = !!(medicament.batch && medicament.batch.trim());
@@ -207,6 +273,7 @@ export async function createRecipeEgress(
           cie_code: undefined,
           recipe_notes: `Paciente ID: ${recipeData.patientIdentifier} | Receptor: ${recipeData.recipientName}`,
           patient_identification: recipeData.patientIdentifier,
+          from_pdf_movement: true,
           batchHandling: {
             batchInfo: {
               batch_number: medicament.batch,
@@ -238,6 +305,7 @@ export async function createRecipeEgress(
         recipe_notes: `Paciente ID: ${recipeData.patientIdentifier} | Receptor: ${recipeData.recipientName}`,
         patient_identification: recipeData.patientIdentifier,
         allowNegativeStock: allowedNegativeSkuSet.has(medicament.sku),
+        from_pdf_movement: true,
 
         batchHandling: hasBatchNumber
           ? {
@@ -439,6 +507,8 @@ export async function createMissingProductsAndRegisterRecipeEgress(
           formData.set("description", fullRecipeName);
         }
 
+        formData.set("from_pdf_movement", "true");
+
         const createResult = await createProduct(formData, "Sistema");
         if (!createResult.success) {
           return {
@@ -458,6 +528,7 @@ export async function createMissingProductsAndRegisterRecipeEgress(
             reason: "Lote adicional desde carga de receta PDF",
             recorded_by: "Sistema",
             movement_date: productDraft.issue_date || today,
+            from_pdf_movement: true,
             batchHandling: {
               batchInfo: {
                 batch_number: productDraft.batch_number.trim(),
@@ -580,6 +651,8 @@ export async function createSingleMissingProduct(
         formData.set("description", fullRecipeName);
       }
 
+      formData.set("from_pdf_movement", "true");
+
       const createResult = await createProduct(formData, "Sistema");
       if (!createResult.success) {
         return {
@@ -603,6 +676,7 @@ export async function createSingleMissingProduct(
           reason: "Lote adicional desde carga de receta PDF",
           recorded_by: "Sistema",
           movement_date: productDraft.issue_date || today,
+          from_pdf_movement: true,
           batchHandling: {
             batchInfo: {
               batch_number: productDraft.batch_number.trim(),

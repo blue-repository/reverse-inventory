@@ -546,6 +546,8 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
     setItemBusy((prev) => ({ ...prev, [item.id]: true }));
 
+    const justCreatedSkusList: string[] = [];
+
     try {
       // ── Phase 1: Create missing products one by one ──
       for (let i = 0; i < productsToCreate.length; i++) {
@@ -594,6 +596,9 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
           return;
         }
 
+        // Track created SKU for justCreatedSkus (avoid duplicate entrada in egress)
+        justCreatedSkusList.push(draft.sku);
+
         // Track created SKU+batch combos to prevent duplicates in subsequent items
         if (createdSkus) {
           createdSkus.add(`${draft.sku}::${(draft.batch_number || "").trim()}`);
@@ -622,6 +627,7 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
           action: "retryRecipeEgress",
           recipeData: item.extractedRecipeData,
           allowedNegativeSkus,
+          justCreatedSkus: justCreatedSkusList,
         }),
       });
 

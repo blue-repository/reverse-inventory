@@ -50,6 +50,7 @@ export interface MovementWithBatchHandling {
   recipe_notes?: string;
   patient_identification?: string;
   allowNegativeStock?: boolean;
+  from_pdf_movement?: boolean;
   
   // Manejo de lotes
   batchHandling?: BatchHandlingInfo;
@@ -148,6 +149,7 @@ export async function recordMovementsWithBatchHandling(
         cie_code: movement.cie_code || null,
         recipe_notes: movement.recipe_notes || null,
         patient_identification: movement.patient_identification || null,
+        from_pdf_movement: movement.from_pdf_movement === true ? true : null,
       };
 
       // Insertar movimiento
@@ -603,6 +605,7 @@ export async function getProduct(productId: string) {
 export async function createProduct(formData: FormData, createdBy?: string) {
   const stock_inicial = parseInt(formData.get("stock") as string) || 0;
   const providedBatchNumber = (formData.get("batch_number") as string | null)?.trim() || "";
+  const fromPdfMovement = formData.get("from_pdf_movement") === "true";
   
   const product = {
     name: formData.get("name") as string,
@@ -654,6 +657,7 @@ export async function createProduct(formData: FormData, createdBy?: string) {
         notes: "Ingreso inicial al crear producto",
         recorded_by: createdBy || "Sistema",
         movement_date: formData.get("issue_date") as string || today,
+        from_pdf_movement: fromPdfMovement,
         batchHandling: {
           batchInfo: {
             batch_number: initialBatchNumber,
