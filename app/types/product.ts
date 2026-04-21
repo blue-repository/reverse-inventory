@@ -71,6 +71,15 @@ export type InventoryMovement = {
   reason?: string | null;
   notes?: string | null;
   reporting_unit?: string | null;
+  recipe_code?: string | null;
+  patient_name?: string | null;
+  recipe_date?: string | null;
+  movement_batch_details?: {
+    quantity?: number | null;
+    product_batches?: {
+      batch_number?: string | null;
+    } | null;
+  }[];
   from_pdf_movement?: boolean | null;
   created_at: string;
   updated_at: string;
