@@ -1,12 +1,22 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import React from "react";
 import ReportBatchesModal, { ReportBatch } from "./ReportBatchesModal";
 
 interface ReportData {
   [key: string]: any;
   lotes?: ReportBatch[];
+  movementCount?: number;
+  movementDetails?: Array<{
+    fechaReceta?: string;
+    fechaRegistro?: string;
+    cantidad?: number;
+    motivo?: string;
+    codigoReceta?: string;
+    codigoNotaSuministro?: string;
+    notas?: string;
+  }>;
 }
 
 interface ReportSummary {
@@ -16,7 +26,9 @@ interface ReportSummary {
   toDate: string;
 }
 
-type ReportType = "egresos" | "ingresos" | "notas-egreso";
+type ReportType = "egresos" | "ingresos";
+type EgressSubtype = "todos-egresos" | "egresos" | "notas-egreso";
+type ActiveReportMode = ReportType | EgressSubtype;
 
 interface ReportsModalProps {
   isOpen: boolean;
@@ -38,6 +50,7 @@ const formatDateSafe = (dateValue: string): string => {
 
 export default function ReportsModal({ isOpen, onClose, initialType = "egresos" }: ReportsModalProps) {
   const [reportType, setReportType] = useState<ReportType>(initialType);
+  const [egressSubtype, setEgressSubtype] = useState<EgressSubtype>("todos-egresos");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [reportData, setReportData] = useState<ReportData[]>([]);
@@ -56,10 +69,82 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
   useEffect(() => {
     if (isOpen) {
       setReportType(initialType);
+      setEgressSubtype("todos-egresos");
       setExpandedRows(new Set());
       setSearchTerm("");
     }
   }, [isOpen, initialType]);
+
+  const activeReportMode: ActiveReportMode = reportType === "egresos" ? egressSubtype : "ingresos";
+  const isEgressMode = activeReportMode === "egresos" || activeReportMode === "notas-egreso" || activeReportMode === "todos-egresos";
+
+  const groupedEgressData = useMemo(() => {
+    if (!isEgressMode) return reportData;
+
+    const map = new Map<string, ReportData>();
+
+    reportData.forEach((row) => {
+      const key = `${row.codigo || "SIN-CODIGO"}__${row.producto || "SIN-NOMBRE"}`;
+      const qty = Number(row.cantidad || 0);
+
+      if (!map.has(key)) {
+        map.set(key, {
+          ...row,
+          cantidad: qty,
+          movementCount: 1,
+          movementDetails: [
+            {
+              fechaReceta: row.fechaReceta,
+              fechaRegistro: row.fechaRegistro,
+              cantidad: qty,
+              motivo: row.motivo,
+              codigoReceta: row.codigoReceta,
+              codigoNotaSuministro: row.codigoNotaSuministro,
+              notas: row.notas,
+            },
+          ],
+        });
+        return;
+      }
+
+      const current = map.get(key)!;
+      const mergedLotes = [...(current.lotes || [])];
+      (row.lotes || []).forEach((incomingBatch) => {
+        const exists = mergedLotes.some((savedBatch) => savedBatch.id === incomingBatch.id);
+        if (!exists) {
+          mergedLotes.push(incomingBatch);
+        }
+      });
+
+      const currentDetails = current.movementDetails || [];
+      const nextDetails = [
+        ...currentDetails,
+        {
+          fechaReceta: row.fechaReceta,
+          fechaRegistro: row.fechaRegistro,
+          cantidad: qty,
+          motivo: row.motivo,
+          codigoReceta: row.codigoReceta,
+          codigoNotaSuministro: row.codigoNotaSuministro,
+          notas: row.notas,
+        },
+      ];
+
+      map.set(key, {
+        ...current,
+        cantidad: Number(current.cantidad || 0) + qty,
+        lotes: mergedLotes,
+        movementCount: Number(current.movementCount || 0) + 1,
+        movementDetails: nextDetails,
+        fechaReceta: nextDetails.length > 1 ? "Multiples" : current.fechaReceta,
+        fechaRegistro: nextDetails.length > 1 ? "Multiples" : current.fechaRegistro,
+      });
+    });
+
+    return Array.from(map.values());
+  }, [isEgressMode, reportData]);
+
+  const displayData = isEgressMode ? groupedEgressData : reportData;
 
   // Actualizar fechas cuando se activa el filtro de hoy
   useEffect(() => {
@@ -131,7 +216,8 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
     setError(null);
 
     try {
-      const endpoint = `/api/reports/${reportType}?fromDate=${fromDate}&toDate=${toDate}`;
+      const endpointType = reportType === "egresos" ? egressSubtype : "ingresos";
+      const endpoint = `/api/reports/${endpointType}?fromDate=${fromDate}&toDate=${toDate}`;
       const response = await fetch(endpoint);
 
       if (!response.ok) {
@@ -156,22 +242,22 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
   };
 
   const handleExportCSV = () => {
-    if (reportData.length === 0) {
+    if (displayData.length === 0) {
       alert("No hay datos para exportar");
       return;
     }
 
-    // Columnas base (sin incluir lotes directamente)
-    const baseHeaders = Object.keys(reportData[0]).filter(key => key !== 'lotes');
+    const exportColumns = columns.filter((col) => col.key !== "lote");
+    const exportData = displayData;
     let csv = "";
 
     // Crear CSV con dos secciones: datos principales y lotes detallados
     csv += "DATOS PRINCIPALES\n";
-    csv += baseHeaders.join(";") + "\n";
+    csv += exportColumns.map((col) => col.label).join(";") + "\n";
     
-    reportData.forEach((row) => {
-      const values = baseHeaders.map((header) => {
-        const value = row[header];
+    exportData.forEach((row) => {
+      const values = exportColumns.map((column) => {
+        const value = row[column.key];
         if (value === null || value === undefined) {
           return "";
         }
@@ -190,9 +276,9 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
 
     // Agregar sección de lotes
     csv += "\n\nDETALLE DE LOTES\n";
-    csv += "Producto;Lote;Stock Actual;Stock Inicial;Vencimiento;Estante;Cajón;Sección;Notas Ubicación\n";
+    csv += "Producto;Lote;Stock Actual;Stock Inicial;Stock Egresado;Vencimiento;Estante;Cajón;Sección;Notas Ubicación\n";
     
-    reportData.forEach((row) => {
+    exportData.forEach((row) => {
       if (row.lotes && row.lotes.length > 0) {
         row.lotes.forEach((batch: ReportBatch) => {
           const batchRow = [
@@ -200,6 +286,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
             batch.batch_number,
             batch.stock,
             batch.initial_stock,
+            Math.max((batch.initial_stock || 0) - (batch.stock || 0), 0),
             new Date(batch.expiration_date).toLocaleDateString("es-EC"),
             batch.shelf || "",
             batch.drawer || "",
@@ -217,13 +304,43 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       }
     });
 
+    if (isEgressMode) {
+      csv += "\n\nDETALLE DE MOVIMIENTOS AGRUPADOS\n";
+      csv += "Producto;Código;Cantidad Total;Nro Movimientos;Fecha Receta;Fecha Registro;Cantidad Movimiento;Motivo;Código Receta/Nota;Notas\n";
+
+      exportData.forEach((row) => {
+        (row.movementDetails || []).forEach((detail) => {
+          const movementRow = [
+            row.producto || "",
+            row.codigo || "",
+            row.cantidad || 0,
+            row.movementCount || 0,
+            detail.fechaReceta || "-",
+            detail.fechaRegistro || "-",
+            detail.cantidad || 0,
+            detail.motivo || "-",
+            detail.codigoReceta || detail.codigoNotaSuministro || "-",
+            detail.notas || "-",
+          ];
+
+          csv += movementRow.map((val) => {
+            const stringVal = String(val);
+            if (stringVal.includes(";") || stringVal.includes('"') || stringVal.includes("\n")) {
+              return `"${stringVal.replace(/"/g, '""')}"`;
+            }
+            return stringVal;
+          }).join(";") + "\n";
+        });
+      });
+    }
+
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
     link.setAttribute(
       "download",
-      `reporte-${reportType}-${new Date().toISOString().split("T")[0]}.csv`
+      `reporte-${activeReportMode}-${new Date().toISOString().split("T")[0]}.csv`
     );
     link.style.visibility = "hidden";
     document.body.appendChild(link);
@@ -233,7 +350,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
   };
 
   const handleExportExcel = async () => {
-    if (reportData.length === 0) {
+    if (displayData.length === 0) {
       alert("No hay datos para exportar");
       return;
     }
@@ -243,11 +360,26 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       const ExcelJS = (await import('exceljs')).default;
 
       const workbook = new ExcelJS.Workbook();
+      const exportData = displayData;
       
       // Hoja principal con datos
-      const sheetName = reportType === 'egresos' ? 'Egresos' : reportType === 'notas-egreso' ? 'Notas de Egreso' : 'Ingresos';
+      const sheetName =
+        activeReportMode === "todos-egresos"
+          ? "Todos los Egresos"
+          : activeReportMode === "notas-egreso"
+          ? "Notas de Egreso"
+          : activeReportMode === "egresos"
+          ? "Egresos Generales"
+          : "Ingresos";
       const mainSheet = workbook.addWorksheet(sheetName);
-      const columns = reportType === "egresos" ? egressColumns : reportType === "notas-egreso" ? notasEgresoColumns : ingressColumns;
+      const columns =
+        activeReportMode === "todos-egresos"
+          ? allEgressColumns
+          : activeReportMode === "notas-egreso"
+          ? notasEgresoColumns
+          : activeReportMode === "egresos"
+          ? egressColumns
+          : ingressColumns;
 
       // Configurar columnas (sin la columna lotes)
       const mainColumns = columns.filter(col => col.key !== 'lote');
@@ -282,7 +414,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       });
 
       // Agregar datos con estilo alternado
-      reportData.forEach((row, index) => {
+      exportData.forEach((row, index) => {
         const excelRow = mainSheet.addRow(
           mainColumns.reduce((acc, col) => {
             acc[col.key] = row[col.key] ?? '';
@@ -326,6 +458,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
         { header: 'Lote', key: 'batch_number', width: 20 },
         { header: 'Stock Actual', key: 'stock', width: 12 },
         { header: 'Stock Inicial', key: 'initial_stock', width: 12 },
+        { header: 'Stock Egresado', key: 'stock_egresado', width: 14 },
         { header: 'Vencimiento', key: 'expiration_date', width: 15 },
         { header: 'Estante', key: 'shelf', width: 12 },
         { header: 'Cajón', key: 'drawer', width: 12 },
@@ -361,7 +494,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
 
       // Agregar lotes
       let batchIndex = 0;
-      reportData.forEach((row) => {
+      exportData.forEach((row) => {
         if (row.lotes && row.lotes.length > 0) {
           row.lotes.forEach((batch: ReportBatch) => {
             const batchRow = batchSheet.addRow({
@@ -369,6 +502,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
               batch_number: batch.batch_number,
               stock: batch.stock,
               initial_stock: batch.initial_stock,
+              stock_egresado: Math.max((batch.initial_stock || 0) - (batch.stock || 0), 0),
               expiration_date: new Date(batch.expiration_date).toLocaleDateString("es-EC"),
               shelf: batch.shelf || "",
               drawer: batch.drawer || "",
@@ -408,13 +542,46 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
 
       batchSheet.getRow(1).height = 25;
 
+      if (isEgressMode) {
+        const movementSheet = workbook.addWorksheet("Detalle Movimientos");
+        movementSheet.columns = [
+          { header: "Producto", key: "producto", width: 28 },
+          { header: "Codigo", key: "codigo", width: 20 },
+          { header: "Cantidad Total", key: "cantidad_total", width: 14 },
+          { header: "Nro Movimientos", key: "mov_count", width: 15 },
+          { header: "Fecha Receta", key: "fecha_receta", width: 16 },
+          { header: "Fecha Registro", key: "fecha_registro", width: 16 },
+          { header: "Cantidad Movimiento", key: "cantidad_mov", width: 16 },
+          { header: "Motivo", key: "motivo", width: 24 },
+          { header: "Codigo Receta/Nota", key: "codigo_receta", width: 20 },
+          { header: "Notas", key: "notas", width: 32 },
+        ];
+
+        exportData.forEach((row) => {
+          (row.movementDetails || []).forEach((detail) => {
+            movementSheet.addRow({
+              producto: row.producto || "",
+              codigo: row.codigo || "",
+              cantidad_total: row.cantidad || 0,
+              mov_count: row.movementCount || 0,
+              fecha_receta: detail.fechaReceta || "-",
+              fecha_registro: detail.fechaRegistro || "-",
+              cantidad_mov: detail.cantidad || 0,
+              motivo: detail.motivo || "-",
+              codigo_receta: detail.codigoReceta || detail.codigoNotaSuministro || "-",
+              notas: detail.notas || "-",
+            });
+          });
+        });
+      }
+
       // Generar y descargar archivo
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
-      link.setAttribute('download', `reporte-${reportType}-${new Date().toISOString().split('T')[0]}.xlsx`);
+      link.setAttribute('download', `reporte-${activeReportMode}-${new Date().toISOString().split('T')[0]}.xlsx`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -427,7 +594,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
   };
 
   const handleExportPDF = async () => {
-    if (reportData.length === 0) {
+    if (displayData.length === 0) {
       alert("No hay datos para exportar");
       return;
     }
@@ -436,6 +603,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       // Importar jsPDF y autotable dinámicamente
       const jsPDF = (await import('jspdf')).default;
       const autoTable = (await import('jspdf-autotable')).default;
+      const exportData = displayData;
 
       const doc = new jsPDF({
         orientation: 'landscape',
@@ -443,23 +611,62 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
         format: 'a4'
       });
 
-      const columns = reportType === "egresos" ? egressColumns : reportType === "notas-egreso" ? notasEgresoColumns : ingressColumns;
-      const mainColumns = columns.filter(col => col.key !== 'lote');
+      const columns =
+        activeReportMode === "todos-egresos"
+          ? allEgressColumns
+          : activeReportMode === "notas-egreso"
+          ? notasEgresoColumns
+          : activeReportMode === "egresos"
+          ? egressColumns
+          : ingressColumns;
+      const excludedAllEgressPdfColumns = new Set([
+        "motivo",
+        "prescriptor",
+        "codigoCIE",
+        "usuario",
+        "especialidad",
+      ]);
+      const mainColumns = columns.filter((col) => {
+        if (col.key === "lote") {
+          return false;
+        }
+
+        if (activeReportMode === "todos-egresos" && excludedAllEgressPdfColumns.has(col.key)) {
+          return false;
+        }
+
+        return true;
+      });
       const headers = mainColumns.map(col => col.label);
-      const data = reportData.map(row => 
+      const data = exportData.map(row => 
         mainColumns.map(col => row[col.key] ?? '')
       );
+      const productColumnIndex = mainColumns.findIndex((col) => col.key === "producto");
+      const pdfColumnStyles = productColumnIndex >= 0
+        ? {
+            [productColumnIndex]: {
+              cellWidth: 50,
+            },
+          }
+        : undefined;
 
       // Página 1: Datos principales
       // Título
       doc.setFontSize(14);
-      const pdfTitle = reportType === 'egresos' ? 'Egresos Generales' : reportType === 'notas-egreso' ? 'Notas de Egreso' : 'Ingresos';
+      const pdfTitle =
+        activeReportMode === "todos-egresos"
+          ? "Todos los Egresos"
+          : activeReportMode === "notas-egreso"
+          ? "Notas de Egreso"
+          : activeReportMode === "egresos"
+          ? "Egresos Generales"
+          : "Ingresos";
       doc.text(`Reporte de ${pdfTitle}`, 14, 15);
       
       if (summary) {
         doc.setFontSize(9);
         doc.text(`Período: ${formatDateSafe(summary.fromDate)} - ${formatDateSafe(summary.toDate)}`, 14, 22);
-        doc.text(`Total registros: ${summary.totalRecords} | Total cantidad: ${summary.totalQuantity}`, 14, 27);
+        doc.text(`Total registros: ${displayData.length} | Total cantidad: ${summary.totalQuantity}`, 14, 27);
       }
 
       // Tabla con letras pequeñas usando autoTable importado
@@ -480,12 +687,13 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
         alternateRowStyles: {
           fillColor: [248, 250, 252],
         },
+        columnStyles: pdfColumnStyles,
         margin: { top: 32, right: 8, bottom: 8, left: 8 },
       });
 
       // Página 2: Detalle de lotes (si existen)
       const batchesData: any[] = [];
-      reportData.forEach((row) => {
+      exportData.forEach((row) => {
         if (row.lotes && row.lotes.length > 0) {
           row.lotes.forEach((batch: ReportBatch) => {
             batchesData.push([
@@ -493,6 +701,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
               batch.batch_number,
               batch.stock,
               batch.initial_stock,
+              Math.max((batch.initial_stock || 0) - (batch.stock || 0), 0),
               new Date(batch.expiration_date).toLocaleDateString("es-EC"),
               batch.shelf || "-",
               batch.drawer || "-",
@@ -511,7 +720,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
         doc.text(`Total lotes: ${batchesData.length}`, 14, 22);
 
         autoTable(doc, {
-          head: [["Producto", "Lote", "Stock Act.", "Stock Inic.", "Vencimiento", "Estante", "Cajón", "Sección", "Notas"]],
+          head: [["Producto", "Lote", "Stock Act.", "Stock Inic.", "Stock Egr.", "Vencimiento", "Estante", "Cajón", "Sección", "Notas"]],
           body: batchesData,
           startY: 27,
           styles: {
@@ -531,7 +740,56 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
         });
       }
 
-      doc.save(`reporte-${reportType}-${new Date().toISOString().split('T')[0]}.pdf`);
+      if (isEgressMode) {
+        const movementRows: any[] = [];
+        const includeMovementReason = activeReportMode !== "todos-egresos";
+        exportData.forEach((row) => {
+          (row.movementDetails || []).forEach((detail) => {
+            const movementRow = [
+              row.producto || "-",
+              row.codigo || "-",
+              row.cantidad || 0,
+              row.movementCount || 0,
+              detail.fechaReceta || "-",
+              detail.fechaRegistro || "-",
+              detail.cantidad || 0,
+              detail.codigoReceta || detail.codigoNotaSuministro || "-",
+            ];
+
+            if (includeMovementReason) {
+              movementRow.splice(7, 0, detail.motivo || "-");
+            }
+
+            movementRows.push(movementRow);
+          });
+        });
+
+        if (movementRows.length > 0) {
+          doc.addPage();
+          doc.setFontSize(14);
+          doc.text("Detalle de Movimientos Agrupados", 14, 15);
+
+          const movementHeaders = includeMovementReason
+            ? [["Producto", "Codigo", "Cant. Total", "Movs", "F. Receta", "F. Registro", "Cant. Mov", "Motivo", "Codigo"]]
+            : [["Producto", "Codigo", "Cant. Total", "Movs", "F. Receta", "F. Registro", "Cant. Mov", "Codigo"]];
+          const movementProductColumnStyles = {
+            0: {
+              cellWidth: includeMovementReason ? 48 : 60,
+            },
+          };
+
+          autoTable(doc, {
+            head: movementHeaders,
+            body: movementRows,
+            startY: 22,
+            styles: { fontSize: 7, cellPadding: 1.2 },
+            columnStyles: movementProductColumnStyles,
+            margin: { top: 22, right: 8, bottom: 8, left: 8 },
+          });
+        }
+      }
+
+      doc.save(`reporte-${activeReportMode}-${new Date().toISOString().split('T')[0]}.pdf`);
       setShowExportMenu(false);
     } catch (error) {
       console.error("Error al generar PDF:", error);
@@ -540,8 +798,9 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
   };
 
   const egressColumns = [
-    { key: "fecha", label: "Fecha", main: true },
-    { key: "hora", label: "Hora", main: true },
+    { key: "fechaReceta", label: "Fecha Receta", main: true },
+    { key: "movementCount", label: "Movs", main: true },
+    { key: "origenEgreso", label: "Origen", main: true },
     { key: "codigo", label: "Código", main: true },
     { key: "producto", label: "Producto", main: true },
     { key: "cantidad", label: "Cant.", main: true },
@@ -552,27 +811,48 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
     { key: "unidad", label: "Unidad", main: false },
     { key: "motivo", label: "Motivo", main: false },
     { key: "codigoReceta", label: "Código Receta", main: false },
-    { key: "fechaReceta", label: "Fecha Receta", main: false },
+    { key: "fechaRegistro", label: "Fecha de Registro", main: false },
+    { key: "prescriptor", label: "Prescriptor", main: false },
+    { key: "codigoCIE", label: "Código CIE", main: false },
+    { key: "usuario", label: "Usuario", main: false },
+  ];
+
+  const allEgressColumns = [
+    { key: "fechaReceta", label: "Fecha Receta", main: true },
+    { key: "movementCount", label: "Movs", main: true },
+    { key: "origenEgreso", label: "Origen", main: true },
+    { key: "codigo", label: "Código", main: true },
+    { key: "producto", label: "Producto", main: true },
+    { key: "cantidad", label: "Cant.", main: true },
+    { key: "lote", label: "Lote", main: true },
+    { key: "paciente", label: "Paciente", main: true },
+    { key: "categoria", label: "Categoría", main: false },
+    { key: "especialidad", label: "Especialidad", main: false },
+    { key: "unidad", label: "Unidad", main: false },
+    { key: "motivo", label: "Motivo", main: false },
+    { key: "codigoReceta", label: "Código Receta", main: false },
+    { key: "fechaRegistro", label: "Fecha de Registro", main: false },
     { key: "prescriptor", label: "Prescriptor", main: false },
     { key: "codigoCIE", label: "Código CIE", main: false },
     { key: "usuario", label: "Usuario", main: false },
   ];
 
   const notasEgresoColumns = [
+    { key: "fechaReceta", label: "Fecha Receta", main: true },
+    { key: "movementCount", label: "Movs", main: true },
+    { key: "origenEgreso", label: "Origen", main: true },
     { key: "codigo", label: "Código", main: true },
     { key: "producto", label: "Producto", main: true },
     { key: "cantidad", label: "Cant.", main: true },
     { key: "unidad", label: "Unidad", main: true },
     { key: "motivo", label: "Motivo", main: true },
     { key: "codigoNotaSuministro", label: "Código Nota Suministro", main: true },
-    { key: "fecha", label: "Fecha", main: true },
-    { key: "hora", label: "Hora", main: false },
+    { key: "fechaRegistro", label: "Fecha de Registro", main: false },
     { key: "notas", label: "Notas", main: false },
   ];
 
   const ingressColumns = [
     { key: "fecha", label: "Fecha", main: true },
-    { key: "hora", label: "Hora", main: true },
     { key: "codigo", label: "Código", main: true },
     { key: "producto", label: "Producto", main: true },
     { key: "cantidad", label: "Cant.", main: true },
@@ -587,19 +867,34 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
     { key: "usuario", label: "Usuario", main: false },
   ];
 
-  const columns = reportType === "egresos" ? egressColumns : reportType === "notas-egreso" ? notasEgresoColumns : ingressColumns;
+  const columns =
+    activeReportMode === "todos-egresos"
+      ? allEgressColumns
+      : activeReportMode === "notas-egreso"
+      ? notasEgresoColumns
+      : activeReportMode === "egresos"
+      ? egressColumns
+      : ingressColumns;
   const mainColumns = columns.filter(col => col.main);
   const detailColumns = columns.filter(col => !col.main);
 
   // Filtrar datos por término de búsqueda
-  const filteredData = reportData.filter(row => {
+  const filteredData = displayData.filter(row => {
     if (!searchTerm) return true;
     const searchLower = searchTerm.toLowerCase();
-    return columns.some(col => {
+    const inColumns = columns.some(col => {
       const value = row[col.key];
       if (value === null || value === undefined) return false;
       return String(value).toLowerCase().includes(searchLower);
     });
+
+    if (inColumns) return true;
+
+    return (row.movementDetails || []).some((detail) =>
+      Object.values(detail).some((value) =>
+        value !== null && value !== undefined && String(value).toLowerCase().includes(searchLower)
+      )
+    );
   });
 
   if (!isOpen) return null;
@@ -654,16 +949,39 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                   value={reportType}
                   onChange={(e) => {
                     setReportType(e.target.value as ReportType);
+                    if (e.target.value === "egresos") {
+                      setEgressSubtype("todos-egresos");
+                    }
                     setReportData([]);
                     setSummary(null);
                   }}
                   className="w-full h-[34px] px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  <option value="egresos">Egresos Generales</option>
-                  <option value="notas-egreso">Notas de Egreso</option>
+                  <option value="egresos">Egresos</option>
                   <option value="ingresos">Ingresos</option>
                 </select>
               </div>
+
+              {reportType === "egresos" && (
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+                    Subtipo de Egreso
+                  </label>
+                  <select
+                    value={egressSubtype}
+                    onChange={(e) => {
+                      setEgressSubtype(e.target.value as EgressSubtype);
+                      setReportData([]);
+                      setSummary(null);
+                    }}
+                    className="w-full h-[34px] px-2 py-1.5 border border-slate-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="todos-egresos">Todos los egresos</option>
+                    <option value="egresos">Egresos generales</option>
+                    <option value="notas-egreso">Notas de egreso</option>
+                  </select>
+                </div>
+              )}
 
               {/* Rango de Fechas Unificado */}
               <div className="lg:col-span-2">
@@ -678,8 +996,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                       setFromDate(e.target.value);
                       setUseTodayFilter(false);
                     }}
-                    disabled={useTodayFilter}
-                    className="flex-1 px-2 py-1.5 text-xs focus:outline-none focus:ring-0 border-0 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                    className="flex-1 px-2 py-1.5 text-xs focus:outline-none focus:ring-0 border-0"
                     style={{ minWidth: '120px' }}
                   />
                   <div className="flex items-center px-1.5 bg-slate-100 text-slate-500 text-xs">→</div>
@@ -690,8 +1007,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                       setToDate(e.target.value);
                       setUseTodayFilter(false);
                     }}
-                    disabled={useTodayFilter}
-                    className="flex-1 px-2 py-1.5 text-xs focus:outline-none focus:ring-0 border-0 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                    className="flex-1 px-2 py-1.5 text-xs focus:outline-none focus:ring-0 border-0"
                     style={{ minWidth: '120px' }}
                   />
                   <button
@@ -724,13 +1040,13 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                 <div className="relative flex-1" ref={exportMenuRef}>
                   <button
                     onClick={() => setShowExportMenu(!showExportMenu)}
-                    disabled={reportData.length === 0}
+                    disabled={displayData.length === 0}
                     className="w-full h-[34px] px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs font-semibold flex items-center justify-center gap-1"
                   >
                     📥 Exportar {showExportMenu ? '▲' : '▼'}
                   </button>
                   
-                  {showExportMenu && reportData.length > 0 && (
+                  {showExportMenu && displayData.length > 0 && (
                     <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-xl border border-slate-200 z-50 overflow-hidden">
                       <button
                         onClick={handlePrint}
@@ -780,7 +1096,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-white rounded px-3 py-2 border border-blue-200">
                   <p className="text-[9px] text-blue-600 uppercase font-bold tracking-wide">Registros</p>
-                  <p className="text-xl font-bold text-blue-900">{summary.totalRecords}</p>
+                  <p className="text-xl font-bold text-blue-900">{displayData.length}</p>
                 </div>
                 <div className="bg-white rounded px-3 py-2 border border-blue-200">
                   <p className="text-[9px] text-blue-600 uppercase font-bold tracking-wide">Cantidad</p>
@@ -803,7 +1119,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
           )}
 
           {/* Buscador de resultados */}
-          {reportData.length > 0 && (
+          {displayData.length > 0 && (
             <div className="mb-3">
               <div className="relative">
                 <input
@@ -834,9 +1150,9 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                   </button>
                 )}
               </div>
-              {searchTerm && filteredData.length !== reportData.length && (
+              {searchTerm && filteredData.length !== displayData.length && (
                 <p className="text-xs text-slate-600 mt-1.5 ml-1">
-                  Mostrando {filteredData.length} de {reportData.length} registros
+                  Mostrando {filteredData.length} de {displayData.length} registros
                 </p>
               )}
             </div>
@@ -844,12 +1160,12 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
 
           {/* Tabla */}
           {filteredData.length > 0 ? (
-            <div className="bg-white rounded-lg border border-slate-300 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-300 shadow-md overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px] border-collapse">
                   <thead>
-                    <tr className="bg-gradient-to-r from-slate-700 to-slate-600 text-white">
-                      <th className="w-8 px-2 py-2.5 text-center font-semibold border-r border-slate-500">
+                    <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-700 text-white">
+                      <th className="w-8 px-2 py-2.5 text-center font-semibold border-r border-slate-500/80">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 mx-auto">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                         </svg>
@@ -857,8 +1173,8 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                       {mainColumns.map((col, idx) => (
                         <th
                           key={col.key}
-                          className={`px-2.5 py-2.5 text-left font-semibold uppercase tracking-wide ${
-                            idx < mainColumns.length - 1 ? 'border-r border-slate-500' : ''
+                          className={`px-2.5 py-2.5 text-left font-semibold uppercase tracking-wide text-[10px] ${
+                            idx < mainColumns.length - 1 ? 'border-r border-slate-500/80' : ''
                           }`}
                         >
                           {col.label}
@@ -871,18 +1187,18 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                       <React.Fragment key={idx}>
                         <tr
                           className={`cursor-pointer transition-colors ${
-                            idx % 2 === 0 ? "bg-white hover:bg-blue-50" : "bg-slate-50 hover:bg-blue-50"
-                          } ${expandedRows.has(idx) ? "bg-blue-100 hover:bg-blue-100" : ""} border-b border-slate-200`}
+                            idx % 2 === 0 ? "bg-white hover:bg-sky-50" : "bg-slate-50/80 hover:bg-sky-50"
+                          } ${expandedRows.has(idx) ? "bg-slate-200/80 hover:bg-slate-200/80" : ""} border-b border-slate-200/90`}
                           onClick={() => toggleRow(idx)}
                         >
-                          <td className="px-2 py-2 text-center border-r border-slate-200">
+                          <td className="px-2 py-2 text-center border-r border-slate-200/90">
                             <svg
                               xmlns="http://www.w3.org/2000/svg"
                               fill="none"
                               viewBox="0 0 24 24"
                               strokeWidth={2.5}
                               stroke="currentColor"
-                              className={`w-3.5 h-3.5 mx-auto transition-transform ${
+                              className={`w-3.5 h-3.5 mx-auto transition-transform text-slate-600 ${
                                 expandedRows.has(idx) ? "rotate-180" : ""
                               }`}
                             >
@@ -893,46 +1209,88 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                             <td
                               key={col.key}
                               className={`px-2.5 py-2 text-slate-800 font-medium ${
-                                colIdx < mainColumns.length - 1 ? 'border-r border-slate-200' : ''
-                              } ${col.key === 'producto' ? 'font-semibold text-slate-900' : ''}`}
+                                colIdx < mainColumns.length - 1 ? 'border-r border-slate-200/90' : ''
+                              } ${col.key === 'producto' ? 'font-semibold text-slate-950' : ''}`}
                             >
-                              {col.key === 'lote' && row.lotes && row.lotes.length > 0 ? (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleShowBatches(row.lotes, row.producto);
-                                  }}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-colors font-semibold text-xs"
-                                  title="Ver lotes disponibles"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                  </svg>
-                                  <span>{row.lotes.length} lote{row.lotes.length > 1 ? 's' : ''}</span>
-                                </button>
+                              {col.key === 'movementCount' ? (
+                                <span className="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-800">
+                                  {row[col.key] || 0}
+                                </span>
+                              ) : col.key === 'cantidad' ? (
+                                <span className="inline-flex items-center rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                                  {row[col.key] || 0}
+                                </span>
                               ) : (
-                                row[col.key] || "-"
+                                col.key === 'lote' && row.lotes && row.lotes.length > 0 ? (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleShowBatches(row.lotes, row.producto);
+                                    }}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-100 text-indigo-800 rounded-md hover:bg-indigo-200 transition-colors font-semibold text-xs"
+                                    title="Ver lotes disponibles"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                    <span>{row.lotes.length} lote{row.lotes.length > 1 ? 's' : ''}</span>
+                                  </button>
+                                ) : (
+                                  row[col.key] || "-"
+                                )
                               )}
                             </td>
                           ))}
                         </tr>
                         {expandedRows.has(idx) && (
-                          <tr key={`${idx}-detail`} className="bg-slate-100 border-b border-slate-300">
+                          <tr key={`${idx}-detail`} className="bg-slate-100/80 border-b border-slate-300/70">
                             <td colSpan={mainColumns.length + 1} className="p-0">
                               <div className="px-4 py-3">
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                                   {detailColumns.map((col) => (
-                                    <div key={col.key} className="bg-white rounded px-3 py-2 border border-slate-200">
-                                      <p className="text-[9px] text-slate-500 uppercase font-semibold tracking-wide mb-0.5">
+                                    <div key={col.key} className="bg-white rounded-md px-3 py-2 border border-slate-200 shadow-sm">
+                                      <p className="text-[9px] text-slate-600 uppercase font-semibold tracking-wide mb-0.5">
                                         {col.label}
                                       </p>
-                                      <p className="text-[11px] text-slate-900 font-medium">
+                                      <p className="text-[11px] text-slate-900 font-semibold">
                                         {row[col.key] || "-"}
                                       </p>
                                     </div>
                                   ))}
                                 </div>
+
+                                {isEgressMode && row.movementDetails && row.movementDetails.length > 0 && (
+                                  <div className="mt-3 bg-white rounded-md px-3 py-2 border border-sky-200 shadow-sm">
+                                    <p className="text-[10px] text-sky-800 uppercase font-bold tracking-wide mb-2">
+                                      Desglose de movimientos ({row.movementDetails.length})
+                                    </p>
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-[10px] border-collapse rounded-md overflow-hidden">
+                                        <thead>
+                                          <tr className="bg-sky-100 text-sky-900">
+                                            <th className="px-2 py-1.5 text-left font-semibold">Fecha Receta</th>
+                                            <th className="px-2 py-1.5 text-left font-semibold">Fecha Registro</th>
+                                            <th className="px-2 py-1.5 text-right font-semibold">Cantidad</th>
+                                            <th className="px-2 py-1.5 text-left font-semibold">Motivo</th>
+                                            <th className="px-2 py-1.5 text-left font-semibold">Codigo</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {row.movementDetails.map((movement, movementIdx) => (
+                                            <tr key={`${idx}-movement-${movementIdx}`} className={`border-t border-sky-100 ${movementIdx % 2 === 0 ? "bg-white" : "bg-sky-50/40"}`}>
+                                              <td className="px-2 py-1.5">{movement.fechaReceta || "-"}</td>
+                                              <td className="px-2 py-1.5">{movement.fechaRegistro || "-"}</td>
+                                              <td className="px-2 py-1.5 text-right font-bold text-emerald-700">{movement.cantidad || 0}</td>
+                                              <td className="px-2 py-1.5">{movement.motivo || "-"}</td>
+                                              <td className="px-2 py-1.5">{movement.codigoReceta || movement.codigoNotaSuministro || "-"}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -943,7 +1301,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                 </table>
               </div>
             </div>
-          ) : reportData.length > 0 ? (
+          ) : displayData.length > 0 ? (
             <div className="bg-yellow-50 rounded-lg border border-yellow-200 p-8 text-center">
               <svg
                 xmlns="http://www.w3.org/2000/svg"

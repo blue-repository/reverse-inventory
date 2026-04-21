@@ -39,17 +39,25 @@ interface MissingProductDraft {
   reporting_unit?: string;
 }
 
-async function hasMovementForRecipeProduct(productId: string, recipeCode?: string | null) {
+async function hasMovementForRecipeProduct(
+  productId: string,
+  recipeCode?: string | null,
+  movementType?: "entrada" | "salida" | "ajuste"
+) {
   const normalizedRecipeCode = (recipeCode || "").trim();
   if (!normalizedRecipeCode) return false;
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("inventory_movements")
     .select("id")
     .eq("product_id", productId)
-    .eq("recipe_code", normalizedRecipeCode)
-    .limit(1)
-    .maybeSingle();
+    .eq("recipe_code", normalizedRecipeCode);
+
+  if (movementType) {
+    query = query.eq("movement_type", movementType);
+  }
+
+  const { data, error } = await query.limit(1).maybeSingle();
 
   if (error) {
     console.error("Error validando duplicado por recipe_code + product_id:", error);
@@ -148,7 +156,7 @@ export async function createRecipeEgress(
       }
     }
 
-    // Validar duplicados por recipe_code + product_id para permitir reprocesamiento parcial.
+    // Validar duplicados por recipe_code + product_id + salida para permitir reprocesamiento parcial.
     let existingByProductId = new Set<string>();
     if (!options.skipDuplicateCheck && resolvedMedicaments.length > 0) {
       const uniqueProductIds = Array.from(new Set(resolvedMedicaments.map((item) => item.product.id)));
@@ -156,6 +164,7 @@ export async function createRecipeEgress(
         .from("inventory_movements")
         .select("id, product_id")
         .eq("recipe_code", recipeData.egressNumber)
+        .eq("movement_type", "salida")
         .in("product_id", uniqueProductIds);
 
       if (existingError) {
@@ -209,6 +218,9 @@ export async function createRecipeEgress(
             notes: `Creacion de lote ${batchNumber} previo a egreso | Vencimiento: ${expDate}`,
             recorded_by: "Sistema",
             movement_date: recipeData.egressDate,
+            recipe_code: recipeData.egressNumber,
+            recipe_date: recipeData.egressDate,
+            patient_name: recipeData.patientName || recipeData.recipientName,
             from_pdf_movement: true,
             batchHandling: {
               batchInfo: {
@@ -543,7 +555,8 @@ export async function createMissingProductsAndRegisterRecipeEgress(
       } else if (productDraft.batch_number && productDraft.batch_number.trim()) {
         const alreadyProcessed = await hasMovementForRecipeProduct(
           existingProduct.id,
-          recipeData.egressNumber
+          recipeData.egressNumber,
+          "entrada"
         );
 
         if (alreadyProcessed) {
@@ -707,7 +720,8 @@ export async function createSingleMissingProduct(
     } else if (productDraft.batch_number && productDraft.batch_number.trim()) {
       const alreadyProcessed = await hasMovementForRecipeProduct(
         existingProduct.id,
-        recipeData.egressNumber
+        recipeData.egressNumber,
+        "entrada"
       );
 
       if (alreadyProcessed) {

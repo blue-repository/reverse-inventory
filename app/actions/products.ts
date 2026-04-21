@@ -593,7 +593,8 @@ export async function getProduct(productId: string) {
     .select("*")
     .eq("id", productId)
     .is("deleted_at", null)
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   if (error || !data) {
     return { data: null, error: error?.message || "Producto no encontrado" };
