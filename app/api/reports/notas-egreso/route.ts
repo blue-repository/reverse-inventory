@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/app/lib/conections/supabase";
 
+function formatDateForDisplay(dateValue: string | null | undefined): string {
+  if (!dateValue) return "-";
+
+  // Evita desfase por timezone cuando la fecha viene en formato YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+    const [year, month, day] = dateValue.split("-");
+    return `${day}/${month}/${year}`;
+  }
+
+  return new Date(dateValue).toLocaleDateString("es-EC");
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -14,22 +26,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Convertir fechas a formato ISO con hora
-    const startDate = new Date(fromDate + "T00:00:00");
-    const endDate = new Date(toDate + "T23:59:59.999");
-    
-    const startDateISO = startDate.toISOString();
-    const endDateISO = endDate.toISOString();
-
     // Obtener movimientos de salida que sean de notas de egreso (from_pdf_movement = true)
     const { data: movements, error: movError } = await supabase
       .from("inventory_movements")
       .select("*")
       .eq("movement_type", "salida")
       .eq("from_pdf_movement", true)
-      .gte("created_at", startDateISO)
-      .lte("created_at", endDateISO)
-      .order("created_at", { ascending: false });
+      .gte("recipe_date", fromDate)
+      .lte("recipe_date", toDate)
+      .order("recipe_date", { ascending: false });
 
     if (movError) {
       console.error("Error al obtener movimientos:", movError);
@@ -127,6 +132,7 @@ export async function GET(request: NextRequest) {
     const reportData = movements.map((movement) => {
       const product = productMap.get(movement.product_id);
       const affectedBatches = batchesByMovementId.get(movement.id) || [];
+      const movementDate = movement.recipe_date || movement.created_at;
       
       return {
         id: movement.id,
@@ -136,7 +142,7 @@ export async function GET(request: NextRequest) {
         unidad: movement.reporting_unit || "unidad",
         motivo: movement.reason || "-",
         codigoNotaSuministro: movement.recipe_code || "-",
-        fecha: new Date(movement.created_at).toLocaleDateString("es-EC"),
+        fecha: formatDateForDisplay(movementDate),
         hora: new Date(movement.created_at).toLocaleTimeString("es-EC"),
         notas: movement.notes || "-",
         lotes: affectedBatches,

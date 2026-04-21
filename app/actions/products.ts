@@ -606,6 +606,9 @@ export async function createProduct(formData: FormData, createdBy?: string) {
   const stock_inicial = parseInt(formData.get("stock") as string) || 0;
   const providedBatchNumber = (formData.get("batch_number") as string | null)?.trim() || "";
   const fromPdfMovement = formData.get("from_pdf_movement") === "true";
+  const recipeCode = (formData.get("recipe_code") as string | null)?.trim() || undefined;
+  const recipeDate = (formData.get("recipe_date") as string | null)?.trim() || undefined;
+  const patientName = (formData.get("patient_name") as string | null)?.trim() || undefined;
   
   const product = {
     name: formData.get("name") as string,
@@ -657,6 +660,9 @@ export async function createProduct(formData: FormData, createdBy?: string) {
         notes: "Ingreso inicial al crear producto",
         recorded_by: createdBy || "Sistema",
         movement_date: formData.get("issue_date") as string || today,
+        recipe_code: recipeCode,
+        recipe_date: recipeDate,
+        patient_name: patientName,
         from_pdf_movement: fromPdfMovement,
         batchHandling: {
           batchInfo: {
@@ -1426,20 +1432,86 @@ async function updateProductStock(productId: string) {
 
 export async function getProductMovements(
   productId: string,
-  limit: number = 50
+  options?: {
+    limit?: number;
+    offset?: number;
+    movementType?: "all" | "entrada" | "salida";
+    search?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }
 ) {
-  const { data, error } = await supabase
-    .from("inventory_movements")
-    .select("*")
-    .eq("product_id", productId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  const pageSize = options?.limit ?? 10;
+  const offset = options?.offset ?? 0;
+  const trimmedSearch = options?.search?.trim().toLowerCase();
 
-  if (error) {
-    return { data: [], error: error.message };
+  let baseQuery = supabase
+    .from("inventory_movements")
+    .select(
+      "*, movement_batch_details(quantity, product_batches(batch_number))",
+      { count: "exact" }
+    )
+    .eq("product_id", productId);
+
+  if (options?.movementType && options.movementType !== "all") {
+    baseQuery = baseQuery.eq("movement_type", options.movementType);
   }
 
-  return { data: data || [], error: null };
+  if (options?.dateFrom) {
+    baseQuery = baseQuery.gte("recipe_date", options.dateFrom);
+  }
+
+  if (options?.dateTo) {
+    baseQuery = baseQuery.lte("recipe_date", options.dateTo);
+  }
+
+  if (trimmedSearch) {
+    const { data: allData, error } = await baseQuery.order("created_at", { ascending: false });
+
+    if (error) {
+      return { data: [], error: error.message, count: 0, hasMore: false };
+    }
+
+    const filtered = (allData || []).filter((movement: any) => {
+      const byReason = (movement.reason || "").toLowerCase().includes(trimmedSearch);
+      const byNotes = (movement.notes || "").toLowerCase().includes(trimmedSearch);
+      const byRecipeCode = (movement.recipe_code || "").toLowerCase().includes(trimmedSearch);
+      const byPatient = (movement.patient_name || "").toLowerCase().includes(trimmedSearch);
+      const byBatchCode = (movement.movement_batch_details || []).some((detail: any) =>
+        (detail.product_batches?.batch_number || "").toLowerCase().includes(trimmedSearch)
+      );
+
+      return byReason || byNotes || byRecipeCode || byPatient || byBatchCode;
+    });
+
+    const total = filtered.length;
+    const paginated = filtered.slice(offset, offset + pageSize);
+
+    return {
+      data: paginated,
+      error: null,
+      count: total,
+      hasMore: offset + paginated.length < total,
+    };
+  }
+
+  const { data, error, count } = await baseQuery
+    .order("created_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
+  if (error) {
+    return { data: [], error: error.message, count: 0, hasMore: false };
+  }
+
+  const total = count ?? 0;
+  const loaded = offset + (data?.length ?? 0);
+
+  return {
+    data: data || [],
+    error: null,
+    count: total,
+    hasMore: loaded < total,
+  };
 }
 
 export async function getProductStockSummary(productId: string) {

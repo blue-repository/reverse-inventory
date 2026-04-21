@@ -24,6 +24,18 @@ interface ReportsModalProps {
   initialType?: ReportType;
 }
 
+const formatDateSafe = (dateValue: string): string => {
+  if (!dateValue) return "-";
+
+  // Evita desfase por timezone cuando viene en formato YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+    const [year, month, day] = dateValue.split("-");
+    return `${day}/${month}/${year}`;
+  }
+
+  return new Date(dateValue).toLocaleDateString("es-EC");
+};
+
 export default function ReportsModal({ isOpen, onClose, initialType = "egresos" }: ReportsModalProps) {
   const [reportType, setReportType] = useState<ReportType>(initialType);
   const [fromDate, setFromDate] = useState("");
@@ -110,7 +122,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       return;
     }
 
-    if (new Date(fromDate) > new Date(toDate)) {
+    if (fromDate > toDate) {
       setError("La fecha inicial debe ser menor a la fecha final");
       return;
     }
@@ -446,7 +458,7 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
       
       if (summary) {
         doc.setFontSize(9);
-        doc.text(`Período: ${new Date(summary.fromDate).toLocaleDateString('es-EC')} - ${new Date(summary.toDate).toLocaleDateString('es-EC')}`, 14, 22);
+        doc.text(`Período: ${formatDateSafe(summary.fromDate)} - ${formatDateSafe(summary.toDate)}`, 14, 22);
         doc.text(`Total registros: ${summary.totalRecords} | Total cantidad: ${summary.totalQuantity}`, 14, 27);
       }
 
@@ -777,13 +789,13 @@ export default function ReportsModal({ isOpen, onClose, initialType = "egresos" 
                 <div className="bg-white rounded px-3 py-2 border border-blue-200">
                   <p className="text-[9px] text-blue-600 uppercase font-bold tracking-wide">Desde</p>
                   <p className="text-sm font-semibold text-blue-900">
-                    {new Date(summary.fromDate).toLocaleDateString("es-EC")}
+                    {formatDateSafe(summary.fromDate)}
                   </p>
                 </div>
                 <div className="bg-white rounded px-3 py-2 border border-blue-200">
                   <p className="text-[9px] text-blue-600 uppercase font-bold tracking-wide">Hasta</p>
                   <p className="text-sm font-semibold text-blue-900">
-                    {new Date(summary.toDate).toLocaleDateString("es-EC")}
+                    {formatDateSafe(summary.toDate)}
                   </p>
                 </div>
               </div>

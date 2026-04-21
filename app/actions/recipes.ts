@@ -39,6 +39,26 @@ interface MissingProductDraft {
   reporting_unit?: string;
 }
 
+async function hasMovementForRecipeProduct(productId: string, recipeCode?: string | null) {
+  const normalizedRecipeCode = (recipeCode || "").trim();
+  if (!normalizedRecipeCode) return false;
+
+  const { data, error } = await supabase
+    .from("inventory_movements")
+    .select("id")
+    .eq("product_id", productId)
+    .eq("recipe_code", normalizedRecipeCode)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Error validando duplicado por recipe_code + product_id:", error);
+    return false;
+  }
+
+  return Boolean(data?.id);
+}
+
 /**
  * Crea un egreso en la base de datos basado en datos de receta extraída del PDF
  * 
@@ -508,6 +528,9 @@ export async function createMissingProductsAndRegisterRecipeEgress(
         }
 
         formData.set("from_pdf_movement", "true");
+        formData.set("recipe_code", recipeData.egressNumber);
+        formData.set("recipe_date", recipeData.egressDate || "");
+        formData.set("patient_name", recipeData.patientName || recipeData.recipientName || "");
 
         const createResult = await createProduct(formData, "Sistema");
         if (!createResult.success) {
@@ -518,6 +541,15 @@ export async function createMissingProductsAndRegisterRecipeEgress(
           };
         }
       } else if (productDraft.batch_number && productDraft.batch_number.trim()) {
+        const alreadyProcessed = await hasMovementForRecipeProduct(
+          existingProduct.id,
+          recipeData.egressNumber
+        );
+
+        if (alreadyProcessed) {
+          continue;
+        }
+
         // Product already exists — create additional batch if batch_number is provided
         const today = new Date().toISOString().split("T")[0];
         const batchResult = await recordMovementsWithBatchHandling([
@@ -528,6 +560,9 @@ export async function createMissingProductsAndRegisterRecipeEgress(
             reason: "Lote adicional desde carga de receta PDF",
             recorded_by: "Sistema",
             movement_date: productDraft.issue_date || today,
+            recipe_code: recipeData.egressNumber,
+            recipe_date: recipeData.egressDate,
+            patient_name: recipeData.patientName || recipeData.recipientName,
             from_pdf_movement: true,
             batchHandling: {
               batchInfo: {
@@ -652,6 +687,9 @@ export async function createSingleMissingProduct(
       }
 
       formData.set("from_pdf_movement", "true");
+      formData.set("recipe_code", recipeData.egressNumber);
+      formData.set("recipe_date", recipeData.egressDate || "");
+      formData.set("patient_name", recipeData.patientName || recipeData.recipientName || "");
 
       const createResult = await createProduct(formData, "Sistema");
       if (!createResult.success) {
@@ -667,6 +705,18 @@ export async function createSingleMissingProduct(
         message: `Producto ${productDraft.sku} creado exitosamente`,
       };
     } else if (productDraft.batch_number && productDraft.batch_number.trim()) {
+      const alreadyProcessed = await hasMovementForRecipeProduct(
+        existingProduct.id,
+        recipeData.egressNumber
+      );
+
+      if (alreadyProcessed) {
+        return {
+          success: true,
+          message: `SKU ${productDraft.sku} omitido: ya existe movimiento para receta ${recipeData.egressNumber}`,
+        };
+      }
+
       const today = new Date().toISOString().split("T")[0];
       const batchResult = await recordMovementsWithBatchHandling([
         {
@@ -676,6 +726,9 @@ export async function createSingleMissingProduct(
           reason: "Lote adicional desde carga de receta PDF",
           recorded_by: "Sistema",
           movement_date: productDraft.issue_date || today,
+          recipe_code: recipeData.egressNumber,
+          recipe_date: recipeData.egressDate,
+          patient_name: recipeData.patientName || recipeData.recipientName,
           from_pdf_movement: true,
           batchHandling: {
             batchInfo: {

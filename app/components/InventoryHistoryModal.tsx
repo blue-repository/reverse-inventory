@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Product, InventoryMovement } from "@/app/types/product";
 import { getProductMovements } from "@/app/actions/products";
 
@@ -25,28 +25,108 @@ export default function InventoryHistoryModal({
   product,
   onClose,
 }: InventoryHistoryModalProps) {
+  const PAGE_SIZE = 10;
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [movementTypeFilter, setMovementTypeFilter] = useState<"all" | "entrada" | "salida">("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const observerTargetRef = useRef<HTMLDivElement | null>(null);
+  const requestIdRef = useRef(0);
+
+  const hasActiveFilters = movementTypeFilter !== "all" || Boolean(dateFrom) || Boolean(dateTo) || Boolean(search.trim());
 
   useEffect(() => {
-    const loadMovements = async () => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const loadMovements = async (reset: boolean) => {
+    const nextOffset = reset ? 0 : offset;
+    const requestId = ++requestIdRef.current;
+
+    if (reset) {
       setIsLoading(true);
+      setIsLoadingMore(false);
       setError(null);
+    } else {
+      setIsLoadingMore(true);
+    }
 
-      const result = await getProductMovements(product.id as string);
+    const result = await getProductMovements(product.id as string, {
+      limit: PAGE_SIZE,
+      offset: nextOffset,
+      movementType: movementTypeFilter,
+      search: debouncedSearch,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+    });
 
-      if (result.error) {
-        setError(result.error);
-      } else {
-        setMovements(result.data);
+    if (requestId !== requestIdRef.current) {
+      return;
+    }
+
+    if (result.error) {
+      setError(result.error);
+      if (reset) {
+        setMovements([]);
       }
+      setHasMore(false);
+    } else {
+      const loadedData = result.data || [];
+      setMovements((prev) => (reset ? loadedData : [...prev, ...loadedData]));
+      setOffset(nextOffset + loadedData.length);
+      setHasMore(Boolean(result.hasMore));
+    }
 
+    if (reset) {
       setIsLoading(false);
+    } else {
+      setIsLoadingMore(false);
+    }
+  };
+
+  useEffect(() => {
+    const loadInitialMovements = async () => {
+      await loadMovements(true);
     };
 
-    loadMovements();
-  }, [product.id]);
+    loadInitialMovements();
+  }, [product.id, movementTypeFilter, dateFrom, dateTo, debouncedSearch]);
+
+  useEffect(() => {
+    if (!observerTargetRef.current || isLoading || isLoadingMore || !hasMore) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMovements(false);
+        }
+      },
+      {
+        root: null,
+        rootMargin: "120px",
+        threshold: 0,
+      }
+    );
+
+    observer.observe(observerTargetRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMore, isLoading, isLoadingMore, offset]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -61,7 +141,11 @@ export default function InventoryHistoryModal({
     };
   }, [onClose]);
 
-  const formatDate = (dateString: string) => {
+  const formatDateTime = (dateString?: string | null) => {
+    if (!dateString) {
+      return "Sin fecha";
+    }
+
     return new Date(dateString).toLocaleDateString("es-EC", {
       year: "numeric",
       month: "2-digit",
@@ -69,6 +153,26 @@ export default function InventoryHistoryModal({
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const formatRecipeDate = (dateString?: string | null) => {
+    if (!dateString) {
+      return "Sin fecha";
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+      const [year, month, day] = dateString.split("-");
+      return `${day}/${month}/${year}`;
+    }
+
+    return formatDateTime(dateString);
+  };
+
+  const clearFilters = () => {
+    setMovementTypeFilter("all");
+    setDateFrom("");
+    setDateTo("");
+    setSearch("");
   };
 
   return (
@@ -121,6 +225,94 @@ export default function InventoryHistoryModal({
               )}
             </div>
           </div>
+
+          <div className="mt-3 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-3 sm:p-4 shadow-sm">
+            <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-5">
+              <div className="lg:col-span-2">
+                <label className="mb-1 block text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Buscar
+                </label>
+                <div className="relative">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                    className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="m21 21-4.35-4.35m0 0A7.5 7.5 0 1 0 6.04 6.04a7.5 7.5 0 0 0 10.61 10.61Z"
+                    />
+                  </svg>
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Motivo, notas, paciente o código de lote"
+                    className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Tipo
+                </label>
+                <select
+                  value={movementTypeFilter}
+                  onChange={(e) => setMovementTypeFilter(e.target.value as "all" | "entrada" | "salida")}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+                >
+                  <option value="all">Todos</option>
+                  <option value="entrada">Solo ingresos</option>
+                  <option value="salida">Solo egresos</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Desde (receta)
+                </label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+                  title="Desde (recipe_date)"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-[11px] sm:text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Hasta (receta)
+                </label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+                  title="Hasta (recipe_date)"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <p className="text-[11px] sm:text-xs text-slate-500">
+                Filtra por tipo y fecha de receta. El buscador también revisa código de lote.
+              </p>
+              <button
+                type="button"
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Limpiar
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="p-3 sm:p-4 md:p-6">
@@ -148,7 +340,7 @@ export default function InventoryHistoryModal({
                   d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15"
                 />
               </svg>
-              <p className="text-slate-500 text-sm">No hay movimientos registrados</p>
+              <p className="text-slate-500 text-sm">No hay movimientos para los filtros aplicados</p>
             </div>
           ) : (
             <div className="space-y-2 sm:space-y-3">
@@ -179,8 +371,26 @@ export default function InventoryHistoryModal({
                           )}
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
-                          {formatDate(movement.created_at)}
+                          {movement.recipe_date ? "Fecha receta: " : "Fecha registro: "}
+                          {movement.recipe_date
+                            ? formatRecipeDate(movement.recipe_date)
+                            : formatDateTime(movement.created_at)}
                         </p>
+                        {movement.movement_batch_details && movement.movement_batch_details.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {movement.movement_batch_details
+                              .map((detail) => detail.product_batches?.batch_number)
+                              .filter(Boolean)
+                              .map((batchNumber, index) => (
+                                <span
+                                  key={`${movement.id}-batch-${index}`}
+                                  className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold text-violet-800"
+                                >
+                                  Lote: {batchNumber}
+                                </span>
+                              ))}
+                          </div>
+                        )}
                         {movement.notes && (
                           <p className="text-xs sm:text-sm text-slate-700 mt-2 italic break-words">
                             "{movement.notes}"
@@ -191,6 +401,20 @@ export default function InventoryHistoryModal({
                   </div>
                 </div>
               ))}
+
+              <div ref={observerTargetRef} className="h-1" />
+
+              {isLoadingMore && (
+                <div className="py-2 text-center text-xs sm:text-sm text-slate-500">
+                  Cargando más movimientos...
+                </div>
+              )}
+
+              {!hasMore && movements.length > 0 && (
+                <div className="py-2 text-center text-xs sm:text-sm text-slate-400">
+                  No hay más movimientos para mostrar
+                </div>
+              )}
             </div>
           )}
         </div>
