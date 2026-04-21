@@ -32,10 +32,10 @@ export default function ReportBatchesModal({
   batches,
   productName,
 }: ReportBatchesModalProps) {
-  if (!isOpen) return null;
-
   // Escuchar la tecla ESC
   useEffect(() => {
+    if (!isOpen) return;
+
     const handleEscapeKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
@@ -44,7 +44,9 @@ export default function ReportBatchesModal({
 
     document.addEventListener("keydown", handleEscapeKey);
     return () => document.removeEventListener("keydown", handleEscapeKey);
-  }, [onClose]);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
 
   const getDaysUntilExpiration = (expirationDate: string): number => {
     const today = new Date();
@@ -204,6 +206,14 @@ export default function ReportBatchesModal({
                           Stock Inicial
                         </p>
                         <p className="text-lg font-bold text-slate-900 mt-1">{batch.initial_stock}</p>
+                      </div>
+                      <div className="bg-white/60 rounded px-2.5 py-2">
+                        <p className="text-[9px] text-slate-600 uppercase font-semibold tracking-wide">
+                          Stock Egresado
+                        </p>
+                        <p className="text-lg font-bold text-slate-900 mt-1">
+                          {Math.max((batch.initial_stock || 0) - (batch.stock || 0), 0)}
+                        </p>
                       </div>
                       <div className="bg-white/60 rounded px-2.5 py-2">
                         <p className="text-[9px] text-slate-600 uppercase font-semibold tracking-wide">

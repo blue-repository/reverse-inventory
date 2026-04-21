@@ -132,18 +132,19 @@ export async function GET(request: NextRequest) {
     const reportData = movements.map((movement) => {
       const product = productMap.get(movement.product_id);
       const affectedBatches = batchesByMovementId.get(movement.id) || [];
-      const movementDate = movement.recipe_date || movement.created_at;
+      const registrationDate = movement.movement_date || movement.created_at;
       
       return {
         id: movement.id,
+        fechaReceta: formatDateForDisplay(movement.recipe_date),
         codigo: product?.barcode || "N/A",
         producto: product?.name || "N/A",
         cantidad: movement.quantity,
         unidad: movement.reporting_unit || "unidad",
         motivo: movement.reason || "-",
+        origenEgreso: movement.reason || "-",
         codigoNotaSuministro: movement.recipe_code || "-",
-        fecha: formatDateForDisplay(movementDate),
-        hora: new Date(movement.created_at).toLocaleTimeString("es-EC"),
+        fechaRegistro: formatDateForDisplay(registrationDate),
         notas: movement.notes || "-",
         lotes: affectedBatches,
       };
