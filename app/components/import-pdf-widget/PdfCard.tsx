@@ -96,6 +96,11 @@ export function PdfCard({ pdf, isActive, onClick, onRemove, onOpen }: PdfCardPro
 
       <div className="mt-2 flex flex-wrap items-center gap-1 px-1">
         {pdf.isProcessing ? <Badge variant="info">Procesando</Badge> : null}
+        {pdf.hasError ? (
+          <Badge variant="danger" className="gap-1">
+            <AlertTriangle className="h-3 w-3" /> Error
+          </Badge>
+        ) : null}
         {isSuccessfullyProcessed && !hasMissing && !hasNegative ? (
           didExecuteEgress ? (
             <Badge variant="warning" className="gap-1">

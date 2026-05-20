@@ -286,34 +286,70 @@ export async function createRecipeEgress(
         continue;
       }
 
+      const currentStock = product.stock ?? 0;
+
       if (hasBatchNumber && !justCreatedSkuSet.has(medicament.sku)) {
-        movements.push({
-          product_id: product.id,
-          quantity: medicament.quantity,
-          type: "entrada" as const,
-          reason: "Sincronizacion de lote desde PDF",
-          notes: `Ingreso automatico previo a egreso | Lote: ${medicament.batch} | Vencimiento: ${batchExpirationDate}`,
-          recorded_by: "Sistema",
-          movement_group_id: prescriptionGroupId,
-          movement_date: recipeData.egressDate,
-          is_recipe_movement: true,
-          prescription_group_id: prescriptionGroupId,
-          recipe_code: recipeData.egressNumber,
-          recipe_date: recipeData.egressDate,
-          patient_name: recipeData.patientName || recipeData.recipientName,
-          prescribed_by: undefined,
-          cie_code: undefined,
-          recipe_notes: `Paciente ID: ${recipeData.patientIdentifier} | Receptor: ${recipeData.recipientName}`,
-          patient_identification: recipeData.patientIdentifier,
-          from_pdf_movement: true,
-          batchHandling: {
-            batchInfo: {
-              batch_number: medicament.batch,
-              issue_date: recipeData.egressDate,
-              expiration_date: batchExpirationDate,
+        if (currentStock === 0) {
+          // Sin stock: crear lote con la cantidad completa antes del egreso
+          movements.push({
+            product_id: product.id,
+            quantity: medicament.quantity,
+            type: "entrada" as const,
+            reason: "Sincronizacion de lote desde PDF",
+            notes: `Ingreso automatico previo a egreso | Lote: ${medicament.batch} | Vencimiento: ${batchExpirationDate}`,
+            recorded_by: "Sistema",
+            movement_group_id: prescriptionGroupId,
+            movement_date: recipeData.egressDate,
+            is_recipe_movement: true,
+            prescription_group_id: prescriptionGroupId,
+            recipe_code: recipeData.egressNumber,
+            recipe_date: recipeData.egressDate,
+            patient_name: recipeData.patientName || recipeData.recipientName,
+            prescribed_by: undefined,
+            cie_code: undefined,
+            recipe_notes: `Paciente ID: ${recipeData.patientIdentifier} | Receptor: ${recipeData.recipientName}`,
+            patient_identification: recipeData.patientIdentifier,
+            from_pdf_movement: true,
+            batchHandling: {
+              batchInfo: {
+                batch_number: medicament.batch,
+                issue_date: recipeData.egressDate,
+                expiration_date: batchExpirationDate,
+              },
             },
-          },
-        });
+          });
+        } else if (currentStock < medicament.quantity) {
+          // Stock insuficiente: crear lote solo con la diferencia faltante
+          const deficit = medicament.quantity - currentStock;
+          movements.push({
+            product_id: product.id,
+            quantity: deficit,
+            type: "entrada" as const,
+            reason: "Sincronizacion de lote desde PDF",
+            notes: `Ingreso automatico de diferencia (${deficit}) previo a egreso | Lote: ${medicament.batch} | Vencimiento: ${batchExpirationDate}`,
+            recorded_by: "Sistema",
+            movement_group_id: prescriptionGroupId,
+            movement_date: recipeData.egressDate,
+            is_recipe_movement: true,
+            prescription_group_id: prescriptionGroupId,
+            recipe_code: recipeData.egressNumber,
+            recipe_date: recipeData.egressDate,
+            patient_name: recipeData.patientName || recipeData.recipientName,
+            prescribed_by: undefined,
+            cie_code: undefined,
+            recipe_notes: `Paciente ID: ${recipeData.patientIdentifier} | Receptor: ${recipeData.recipientName}`,
+            patient_identification: recipeData.patientIdentifier,
+            from_pdf_movement: true,
+            batchHandling: {
+              batchInfo: {
+                batch_number: medicament.batch,
+                issue_date: recipeData.egressDate,
+                expiration_date: batchExpirationDate,
+              },
+            },
+          });
+        }
+        // Stock suficiente: no se crea ingreso previo
       }
 
       const movement = {
@@ -339,7 +375,9 @@ export async function createRecipeEgress(
         allowNegativeStock: allowedNegativeSkuSet.has(medicament.sku),
         from_pdf_movement: true,
 
-        batchHandling: hasBatchNumber
+        // Stock = 0: buscar el lote recién creado para el egreso exacto.
+        // Stock insuficiente o suficiente: sin lote específico (FEFO cubre múltiples lotes).
+        batchHandling: hasBatchNumber && currentStock === 0
           ? {
               batchSearchNumber: medicament.batch,
               expirationDate: medicament.expirationDate,
