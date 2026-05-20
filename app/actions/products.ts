@@ -87,6 +87,19 @@ export async function recordMovementsWithBatchHandling(
 
     const batchIssues: string[] = [];
 
+    // Acumula entradas pendientes por product_id para la pre-validación.
+    // Esto evita falsos positivos cuando en el mismo batch hay una entrada
+    // previa que aumentará el stock antes de que se ejecute la salida.
+    const pendingEntradaByProduct = new Map<string, number>();
+    for (const movement of movements) {
+      if (movement.type === "entrada") {
+        pendingEntradaByProduct.set(
+          movement.product_id,
+          (pendingEntradaByProduct.get(movement.product_id) ?? 0) + movement.quantity
+        );
+      }
+    }
+
     // Validar que todos los productos existan
     for (const movement of movements) {
       if (movement.quantity <= 0) {
@@ -104,9 +117,13 @@ export async function recordMovementsWithBatchHandling(
         return { success: false, error: `Producto no encontrado: ${movement.product_id}` };
       }
 
-      // Pre-validación: si es salida sin manejo de lote específico, validar stock general
+      // Pre-validación: si es salida sin manejo de lote específico, validar stock general.
+      // Se suma cualquier entrada pendiente del mismo producto en este batch
+      // para evitar rechazar salidas que van acompañadas de su entrada previa.
       if (movement.type === "salida" && !movement.batchHandling?.batchId && !movement.batchHandling?.batchSearchNumber) {
-        if (productData.stock < movement.quantity) {
+        const pendingEntrada = pendingEntradaByProduct.get(movement.product_id) ?? 0;
+        const effectiveStock = (productData.stock ?? 0) + pendingEntrada;
+        if (effectiveStock < movement.quantity) {
           if (!movement.allowNegativeStock) {
             return { success: false, error: `Stock insuficiente para producto: ${movement.product_id}` };
           }
