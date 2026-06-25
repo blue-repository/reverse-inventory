@@ -368,9 +368,33 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
         prev.map((i) => (i.id === itemId ? { ...i, progress: 50 } : i))
       );
 
-      const { parseRecipeDataFromPDF } = await import("@/app/lib/pdf-utils");
+      // ❌ BORRAS ESTO:
+      // const { parseRecipeDataFromPDF } = await import("@/app/lib/pdf-utils");
+      // const parseResult = await parseRecipeDataFromPDF(buffer);
 
-      const parseResult = await parseRecipeDataFromPDF(buffer);
+      // ✅ LO REEMPLAZAS POR ESTO:
+      const PDF_API_URL = process.env.NODE_ENV === "development"
+        ? "http://localhost:5001"
+        : "/api/extract_pdf";
+
+      const pdfResponse = await fetch(PDF_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/pdf" },
+        body: file, // File directamente, no el buffer
+      });
+
+      if (!pdfResponse.ok) {
+        const err = await pdfResponse.json().catch(() => ({ error: pdfResponse.statusText }));
+        return {
+          success: false,
+          message: err.error ?? "Error extrayendo PDF",
+          error: "PDF_PARSE_ERROR",
+        };
+      }
+
+      const parseResult = await pdfResponse.json(); // ya viene como EgresoData
+
+      console.table(parseResult);
 
       if (parseResult && typeof parseResult === "object" && "success" in parseResult && parseResult.success === false) {
         return {
@@ -379,9 +403,9 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
           error: "VALIDATION_ERROR",
         };
       }
-
+console.log(process.env.NEXT_PUBLIC_SUPABASE_URL);
       const recipeData = parseResult as RecipeData;
-
+console.log('Resultado de parseResult:', recipeData);
       // Validar duplicados por número de egreso
       if (recipeData.egressNumber) {
         const existingEgress = queueRef.current.find(
@@ -389,7 +413,10 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
             i.id !== itemId &&
             i.extractedRecipeData?.egressNumber === recipeData.egressNumber
         );
+        console.log('Encontrado:', existingEgress);
         if (existingEgress) {
+        console.log('Encontrado x2:', existingEgress);
+
           return {
             success: false,
             message: `Este documento ya fue cargado (Egreso: ${recipeData.egressNumber}). Archivo: ${existingEgress.fileName}`,
@@ -438,7 +465,8 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
       setQueue((prev) =>
         prev.map((i) => (i.id === itemId ? { ...i, progress: 100 } : i))
       );
-
+      console.log("Resultado de uploadAndProcessFile:", data);
+      console.table(recipeData);
       return {
         ...data,
         extractedRecipeData: recipeData,
@@ -744,13 +772,14 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
         negativeStockProducts,
         isProcessing: item.status === "processing",
         hasError: item.status === "error",
+        error: item.status === "error" ? item.error : undefined,
       };
     });
   }, [queue]);
 
   const tableRows = useMemo<TableProductRow[]>(() => {
     const rows: TableProductRow[] = [];
-
+console.log("queue", queue);
     queue.forEach((item) => {
       if (!item.extractedRecipeData) return;
       const didExecuteEgress = !!item.result?.didExecuteEgress && !!item.result?.success;
@@ -771,8 +800,8 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
         const alreadyProcessedItem = alreadyProcessedBySku.get(med.sku);
 
         let status: TableProductRow["status"] = "ok";
-  if (didExecuteEgress) status = "processed";
-  else if (missingMedicament) status = "missing";
+        if (didExecuteEgress) status = "processed";
+        else if (missingMedicament) status = "missing";
         else if (insufficientItem) status = "negative";
         else if (alreadyProcessedItem) status = "processed";
 

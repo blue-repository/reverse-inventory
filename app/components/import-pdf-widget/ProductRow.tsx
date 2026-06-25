@@ -22,7 +22,7 @@ export function ProductRow({ row, negativeApproved, onToggleNegative }: ProductR
         isNegative
           ? "bg-red-50 hover:bg-red-100/50"
           : isProcessed
-            ? "bg-amber-50 hover:bg-amber-100/50"
+            ? "bg-slate-100 hover:bg-slate-200/100"
             : ""
       }
     >

@@ -15,6 +15,7 @@ export interface PdfSummary {
   negativeStockProducts: number;
   isProcessing: boolean;
   hasError: boolean;
+  error?: string;
 }
 
 export interface TableProductRow {

@@ -49,19 +49,24 @@ export default function ProductsTableClient({
   const [showReportMenu, setShowReportMenu] = useState(false);
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [reportsModalType, setReportsModalType] = useState<"egresos" | "ingresos">("egresos");
-  const [searchQuery, setSearchQuery] = useState(initialQuery);
+  const [searchQuery, setSearchQuery] = useState(() => {
+    // Inicializar desde URL solo al montar
+    return searchParams.get("q") ?? "";
+  });
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reportMenuRef = useRef<HTMLDivElement | null>(null);
+  const isTypingRef = useRef(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Valor derivado estable para la dep del efecto de sincronización
   const urlQueryParam = searchParams.get("q") ?? "";
 
   // Sincronizar searchQuery con la URL cuando cambia el parámetro de búsqueda
-  useEffect(() => {
-    setSearchQuery(urlQueryParam);
-  }, [urlQueryParam]);
+  // useEffect(() => {
+  //   setSearchQuery(urlQueryParam);
+  // }, [urlQueryParam]);
 
   // Función auxiliar para obtener los filtros actuales del URL
   const getCurrentFilters = useCallback((): FilterOptions => {
@@ -107,20 +112,24 @@ export default function ProductsTableClient({
   const handleSearch = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const newQuery = e.target.value;
-      setSearchQuery(newQuery);
 
-      // Limpiar el timeout anterior
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
+      // Marcar que el usuario está escribiendo
+      isTypingRef.current = true;
+      setSearchQuery(newQuery); // este estado es solo para el input, nunca lo toca la URL
 
-      // Configurar nuevo timeout para actualizar URL después de 300ms
+      // Resetear el flag "escribiendo" si el usuario deja de tipear 1s
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        isTypingRef.current = false;
+      }, 1000);
+
+      // Debounce para actualizar URL
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = setTimeout(() => {
         const currentFilters = getCurrentFilters();
         const params = buildParamsWithFilters(currentFilters, newQuery);
         params.set("page", "1");
         params.set("pageSize", pageSize.toString());
-
         router.push(`/?${params.toString()}`, { scroll: false });
       }, 300);
     },
@@ -134,6 +143,13 @@ export default function ProductsTableClient({
       }
     };
   }, []);
+
+  useEffect(() => {
+    // No sobreescribir el input mientras el usuario está escribiendo
+    if (isTypingRef.current) return;
+    const urlQuery = searchParams.get("q") ?? "";
+    setSearchQuery(urlQuery);
+  }, [searchParams]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
