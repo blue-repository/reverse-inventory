@@ -402,7 +402,7 @@ export async function parseRecipeDataFromPDF(
         data = await Promise.race([
           pdfParseFn(pdfBuffer),
           new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("pdf-parse timeout")), 10000)
+            setTimeout(() => reject(new Error("pdf-parse timeout")), 20000)
           )
         ]);
       } catch (timeoutError) {

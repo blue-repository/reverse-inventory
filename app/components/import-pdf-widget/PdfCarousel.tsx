@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useKeenSlider } from "keen-slider/react";
 import "keen-slider/keen-slider.min.css";
 import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Minus, Plus } from "lucide-react";
@@ -46,18 +46,49 @@ export function PdfCarousel({
     },
   });
 
+  const carouselWrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = carouselWrapperRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!slider.current) return;
+      if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
+
+      const sliderEl = el.querySelector(".keen-slider");
+      const hasScroll = sliderEl
+        ? sliderEl.scrollWidth > sliderEl.clientWidth
+        : false;
+
+      if (!hasScroll) return;
+
+      const track = slider.current.track.details;
+      const direction = e.deltaY > 0 ? 1 : -1;
+      const isAtStart = track.abs === 0 && direction === -1;
+      const isAtEnd = track.abs === track.maxIdx && direction === 1;
+
+      // Al llegar al extremo, dejar pasar el evento al modal
+      if (isAtStart || isAtEnd) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      slider.current.moveToIdx(track.abs + direction);
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, [slider]);
+
   useEffect(() => {
     if (!slider.current) return;
     slider.current.moveToIdx(initialIndex);
   }, [initialIndex, slider]);
 
-  const onWheelScroll: React.WheelEventHandler<HTMLDivElement> = (event) => {
+  useEffect(() => {
     if (!slider.current) return;
-    if (Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
-    event.preventDefault();
-    const direction = event.deltaY > 0 ? 1 : -1;
-    slider.current.moveToIdx(slider.current.track.details.abs + direction);
-  };
+    slider.current.update(); // le dice a keen-slider que recalcule los slides
+  }, [items.length, slider]); // se dispara cada vez que cambia la cantidad
 
   return (
     <div className="border-b border-slate-200 bg-white">
@@ -82,29 +113,31 @@ export function PdfCarousel({
         </div>
       </div>
 
-      <div ref={sliderRef} className="keen-slider p-3" onWheel={onWheelScroll}>
-        {items.map((pdf) => (
-          <div className="keen-slider__slide !w-[170px] !min-w-[170px] !max-w-[170px] !shrink-0" key={pdf.id}>
-            <PdfCard
-              pdf={pdf}
-              isActive={activePdfId === pdf.id}
-              onClick={() => onSelectPdf(activePdfId === pdf.id ? null : pdf.id)}
-              onRemove={() => onRemovePdf(pdf.id)}
-              onOpen={() => onOpenPdf(pdf.id)}
-            />
+      <div ref={carouselWrapperRef}>
+        <div ref={sliderRef} className="keen-slider p-3" style={{ overflow: "hidden" }}>
+          {items.map((pdf) => (
+            <div className="keen-slider__slide" style={{ width: "170px", minWidth: "170px", maxWidth: "170px", flexShrink: 0 }} key={pdf.id}>
+              <PdfCard
+                pdf={pdf}
+                isActive={activePdfId === pdf.id}
+                onClick={() => onSelectPdf(activePdfId === pdf.id ? null : pdf.id)}
+                onRemove={() => onRemovePdf(pdf.id)}
+                onOpen={() => onOpenPdf(pdf.id)}
+              />
+            </div>
+          ))}
+          {/* Card para agregar más PDFs */}
+          <div className="keen-slider__slide" style={{ width: "170px", minWidth: "170px", maxWidth: "170px", flexShrink: 0 }} key="add-more">
+            <button
+              type="button"
+              onClick={onAddMore}
+              className="flex h-full min-h-[200px] w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white p-4 text-slate-400 transition-all hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-500"
+              title="Agregar más archivos PDF"
+            >
+              <Plus className="h-8 w-8" />
+              <span className="text-xs font-medium">Agregar PDFs</span>
+            </button>
           </div>
-        ))}
-        {/* Card para agregar más PDFs */}
-        <div className="keen-slider__slide !w-[170px] !min-w-[170px] !max-w-[170px] !shrink-0" key="add-more">
-          <button
-            type="button"
-            onClick={onAddMore}
-            className="flex h-full min-h-[200px] w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white p-4 text-slate-400 transition-all hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-500"
-            title="Agregar más archivos PDF"
-          >
-            <Plus className="h-8 w-8" />
-            <span className="text-xs font-medium">Agregar PDFs</span>
-          </button>
         </div>
       </div>
     </div>

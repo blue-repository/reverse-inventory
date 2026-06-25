@@ -24,7 +24,7 @@ export function MissingProductRow({
   onOpenFullForm,
 }: MissingProductRowProps) {
   return (
-    <TableRow className="bg-amber-50 hover:bg-amber-100/50">
+    <TableRow className={ (confirmed || resolved) ? "bg-emerald-200 hover:bg-emerald-300/100" : "bg-amber-200 hover:bg-amber-300/100" }>
       <TableCell className="w-[68px]" />
       <TableCell className="font-mono text-xs">{row.sku}</TableCell>
       <TableCell>{row.name || row.sku}</TableCell>
@@ -39,7 +39,7 @@ export function MissingProductRow({
             <CheckCircle2 className="h-3 w-3" /> Confirmado
           </Badge>
         ) : (
-          <Badge variant="warning" className="gap-1">
+          <Badge variant="warning" className="gap-1" title="Este producto no se encuentra en el inventario y requiere acción">
             <AlertTriangle className="h-3 w-3" /> Faltante
           </Badge>
         )}
