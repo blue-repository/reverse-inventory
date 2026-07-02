@@ -175,6 +175,12 @@ export function ProductTable({
 
             {groups.map((group) => {
               const isCollapsed = !!collapsedGroups[group.pdfId];
+              const unresolvedMissingInGroup = group.rows.filter(
+                (row) =>
+                  row.status === "missing" &&
+                  !manualResolvedMissing[row.pdfId]?.[row.sku] &&
+                  !missingSelections[row.pdfId]?.[row.sku]
+              ).length;
               
               return (
                 <Fragment key={`group-${group.pdfId}`}>
@@ -200,40 +206,56 @@ export function ProductTable({
                           <span className="truncate font-semibold text-slate-900">{group.pdfName}</span>
                           <span className="shrink-0 text-xs text-slate-600">({group.rows.length})</span>
                         </button>
-                        <div className="relative">
-                          <div
-                            className={cn(
-                                "flex rounded-lg border bg-slate-300 p-0.5 transition-colors",
-                                movementErrors[group.pdfId]
-                                    ? "border-red-500 ring-2 ring-red-200"
-                                    : "border-slate-300"
-                            )}
-                          >
-                            {(["ingreso", "egreso"] as const).map((type) => (
-                              <button
-                                key={type}
-                                type="button"
-                                onClick={() => {
-                                    setMovementTypes((current) => ({
-                                        ...current,
-                                        [group.pdfId]: type,
-                                    }));
+                        <div className="flex items-center gap-2">
+                          {unresolvedMissingInGroup > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onBulkCreateMissing(group.pdfId);
+                              }}
+                              className="flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+                            >
+                              <PlusCircle className="h-3.5 w-3.5" />
+                              Crear todos ({unresolvedMissingInGroup})
+                            </button>
+                          )}
 
-                                    setMovementErrors((current) => ({
-                                        ...current,
-                                        [group.pdfId]: false,
-                                    }));
-                                }}
-                                className={cn(
-                                  "rounded-md px-3 py-1 text-xm font-medium transition-all text-bold",
-                                  movementTypes[group.pdfId] === type
-                                    ? "bg-sky-400 shadow-md"
-                                    : "text-slate-500 hover:text-black"
-                                )}
-                              >
-                                {type === "ingreso" ? "Ingreso" : "Egreso"}
-                              </button>
-                            ))}
+                          <div className="relative">
+                            <div
+                              className={cn(
+                                  "flex rounded-lg border bg-slate-300 p-0.5 transition-colors",
+                                  movementErrors[group.pdfId]
+                                      ? "border-red-500 ring-2 ring-red-200"
+                                      : "border-slate-300"
+                              )}
+                            >
+                              {(["ingreso", "egreso"] as const).map((type) => (
+                                <button
+                                  key={type}
+                                  type="button"
+                                  onClick={() => {
+                                      setMovementTypes((current) => ({
+                                          ...current,
+                                          [group.pdfId]: type,
+                                      }));
+
+                                      setMovementErrors((current) => ({
+                                          ...current,
+                                          [group.pdfId]: false,
+                                      }));
+                                  }}
+                                  className={cn(
+                                    "rounded-md px-3 py-1 text-xm font-medium transition-all text-bold",
+                                    movementTypes[group.pdfId] === type
+                                      ? "bg-sky-400 shadow-md"
+                                      : "text-slate-500 hover:text-black"
+                                  )}
+                                >
+                                  {type === "ingreso" ? "Ingreso" : "Egreso"}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>
