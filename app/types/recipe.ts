@@ -34,6 +34,13 @@ export interface RecipeData {
   // Información general del egreso
   entityOrigin: string;
   warehouseOrigin: string;
+
+  // Estos son los tipos de egreso que se manejan por el momento segun los PDF proporcionados por la patrona.
+  // EDP - Egreso Dispensación a Pacientes
+  // EAEE - Egreso Abastecimiento Entre Entidades de MSP
+  // ENR - Egreso No Regulado (cualquier otro caso)
+  egressType: string;
+
   egressDate: string;
   egressNumber: string;
   /** Subtipo del documento, ej: "Dispensación A Pacientes", "Abastecimiento Entre Entidades De Msp" */

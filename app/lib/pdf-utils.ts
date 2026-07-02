@@ -134,6 +134,42 @@ export function extractEgressSubtype(text: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Infiera el código de tipo de egreso a partir del subtipo detectado.
+ * EDP  = Dispensación a Pacientes
+ * EAEE = Abastecimiento Entre Entidades de MSP
+ * ENR  = No Regulado (fallback)
+ */
+function inferEgressType(subtype: string | undefined, text: string): string {
+  const normalizedSubtype = (subtype || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+
+  if (normalizedSubtype.includes("DISPENSACION") && normalizedSubtype.includes("PACIENTE")) {
+    return "EDP";
+  }
+
+  if (normalizedSubtype.includes("ABASTECIMIENTO") && normalizedSubtype.includes("ENTIDADES")) {
+    return "EAEE";
+  }
+
+  const normalizedText = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+
+  if (normalizedText.includes("DISPENSACION A PACIENTES")) {
+    return "EDP";
+  }
+
+  if (normalizedText.includes("ABASTECIMIENTO ENTRE ENTIDADES")) {
+    return "EAEE";
+  }
+
+  return "ENR";
+}
+
 // ============================================================================
 // EXTRACCIÓN BASADA EN COORDENADAS (x, y) usando pdfjs-dist
 // ============================================================================
@@ -1289,13 +1325,15 @@ export function parseRecipeData(text: string): RecipeData | { success: false; er
   // Parsear medicamentos
   const medicaments = parseMedicaments(text);
   const totalMedicaments = medicaments.reduce((sum, med) => sum + med.total, 0);
+  const egressSubtype = extractEgressSubtype(text);
 
   return {
     entityOrigin: header.entityOrigin || "BAGATELA",
     warehouseOrigin: header.warehouseOrigin || "BODEGA DE FARMACIA BAGATELA",
+    egressType: inferEgressType(egressSubtype, text),
     egressDate: header.egressDate || extractDateFromText(text),
     egressNumber: normalizeEgressNumber(header.egressNumber),
-    egressSubtype: extractEgressSubtype(text),
+    egressSubtype,
     documentType: header.documentType || "Receta",
     documentNumber: header.documentNumber || "",
     documentDate: header.documentDate || "",

@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
       .eq("from_pdf_movement", true)
       .gte("recipe_date", fromDate)
       .lte("recipe_date", toDate)
+      .eq("reason", "Dispensación a Pacientes")
       .order("recipe_date", { ascending: false });
 
     if (movError) {
