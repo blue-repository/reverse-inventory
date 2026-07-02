@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   ColumnDef,
   flexRender,
@@ -21,6 +21,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { TableProductRow } from "@/app/components/import-pdf-widget/types";
 import { ProductRow } from "@/app/components/import-pdf-widget/ProductRow";
 import { MissingProductRow } from "@/app/components/import-pdf-widget/MissingProductRow";
+import { cn } from "@/lib/utils";
 
 interface ProductTableProps {
   rows: TableProductRow[];
@@ -37,6 +38,12 @@ interface ProductTableProps {
   onQuickCreateMissing: (row: TableProductRow) => void;
   onBulkCreateMissing: (pdfId: string) => void;
   onOpenMissingForm: (row: TableProductRow) => void;
+  movementTypes: Record<string, "ingreso" | "egreso">;
+  setMovementTypes: React.Dispatch<
+    React.SetStateAction<Record<string, "ingreso" | "egreso">>
+  >;
+  movementErrors: Record<string, boolean>;
+  setMovementErrors: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 }
 
 export function ProductTable({
@@ -54,6 +61,10 @@ export function ProductTable({
   onQuickCreateMissing,
   onBulkCreateMissing,
   onOpenMissingForm,
+  movementTypes,
+  setMovementTypes,
+  movementErrors,
+  setMovementErrors,
 }: ProductTableProps) {
   const filteredRows = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -164,45 +175,67 @@ export function ProductTable({
 
             {groups.map((group) => {
               const isCollapsed = !!collapsedGroups[group.pdfId];
-              const unresolvedMissingInGroup = group.rows.filter(
-                (r) =>
-                  r.status === "missing" &&
-                  !manualResolvedMissing[r.pdfId]?.[r.sku] &&
-                  !missingSelections[r.pdfId]?.[r.sku]
-              ).length;
-
+              
               return (
                 <Fragment key={`group-${group.pdfId}`}>
                   <TableRow key={`header-${group.pdfId}`} className="bg-slate-100 hover:bg-slate-100">
                     <TableCell colSpan={6}>
-                      <div className="flex items-center justify-between">
+                      {movementErrors[group.pdfId] && (
+                        <p className="mt-1 text-xs text-red-600">
+                            Selecciona si este PDF corresponde a un ingreso o un egreso.
+                        </p>
+                      )}
+                      <div className="flex items-center justify-between gap-2">
                         <button
                           type="button"
                           onClick={() => onToggleGroup(group.pdfId)}
-                          className="flex items-center gap-2 text-left"
+                          className="flex min-w-0 items-center gap-2 text-left"
                         >
                           {isCollapsed ? (
-                            <ChevronRight className="h-4 w-4 text-slate-700" />
+                            <ChevronRight className="h-4 w-4 shrink-0 text-slate-700" />
                           ) : (
-                            <ChevronDown className="h-4 w-4 text-slate-700" />
+                            <ChevronDown className="h-4 w-4 shrink-0 text-slate-700" />
                           )}
-                          <FileText className="h-4 w-4 text-slate-700" />
-                          <span className="font-semibold text-slate-900">{group.pdfName}</span>
-                          <span className="text-xs text-slate-600">({group.rows.length})</span>
+                          <FileText className="h-4 w-4 shrink-0 text-slate-700" />
+                          <span className="truncate font-semibold text-slate-900">{group.pdfName}</span>
+                          <span className="shrink-0 text-xs text-slate-600">({group.rows.length})</span>
                         </button>
-                        {unresolvedMissingInGroup > 0 && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onBulkCreateMissing(group.pdfId);
-                            }}
-                            className="flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+                        <div className="relative">
+                          <div
+                            className={cn(
+                                "flex rounded-lg border bg-slate-300 p-0.5 transition-colors",
+                                movementErrors[group.pdfId]
+                                    ? "border-red-500 ring-2 ring-red-200"
+                                    : "border-slate-300"
+                            )}
                           >
-                            <PlusCircle className="h-3.5 w-3.5" />
-                            Crear todos ({unresolvedMissingInGroup})
-                          </button>
-                        )}
+                            {(["ingreso", "egreso"] as const).map((type) => (
+                              <button
+                                key={type}
+                                type="button"
+                                onClick={() => {
+                                    setMovementTypes((current) => ({
+                                        ...current,
+                                        [group.pdfId]: type,
+                                    }));
+
+                                    setMovementErrors((current) => ({
+                                        ...current,
+                                        [group.pdfId]: false,
+                                    }));
+                                }}
+                                className={cn(
+                                  "rounded-md px-3 py-1 text-xm font-medium transition-all text-bold",
+                                  movementTypes[group.pdfId] === type
+                                    ? "bg-sky-400 shadow-md"
+                                    : "text-slate-500 hover:text-black"
+                                )}
+                              >
+                                {type === "ingreso" ? "Ingreso" : "Egreso"}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     </TableCell>
                   </TableRow>

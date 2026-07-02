@@ -44,6 +44,7 @@ class handler(BaseHTTPRequestHandler):
 
 def extract_egreso(pdf_bytes: bytes) -> dict:
     result = {
+        "egressType": "",
         "egressNumber": "",
         "egressDate": "",
         "recipientName": "",
@@ -76,6 +77,18 @@ def extract_egreso(pdf_bytes: bytes) -> dict:
 
 
 def _parse_header(text: str) -> dict:
+
+    m = re.search(r'NOTA DE EGRESO\s*["""]Egresos\s*-\s*(Dispensación A Pacientes|Abastecimiento Entre Entidades De Msp)["""]', text)
+
+    # EDP - Egreso Dispensación a Pacientes
+    # EAEE - Egreso Abastecimiento Entre Entidades de MSP
+    # ENR - Egreso No Regulado (cualquier otro caso)
+    tipo_map = {
+        "Dispensación A Pacientes":              "EDP",
+        "Abastecimiento Entre Entidades De Msp": "EAEE",
+    }
+
+    egress_type = tipo_map.get(m.group(1), "ENR") if m else "ENR"
 
     # egressNumber: siempre tiene EGR en el medio
     egr_m = re.search(r"(\d{6}-\d{4}-EGR-[\w-]+)", text)
@@ -110,6 +123,7 @@ def _parse_header(text: str) -> dict:
         dest_m = re.search(r"\b(\d{6}-[A-Z]+)\b", text)
 
     return {
+        "egressType":        egress_type,
         "egressNumber":      egr_m.group(1)      if egr_m      else "",
         "egressDate":        date_m.group(1)     if date_m     else "",
         "recipientName":     recipient_name,
@@ -138,7 +152,7 @@ def _parse_rows(rows: list) -> list:
             "quantity":     _num(cells[6]),
             "total":        _num(cells[8]),
             # campos extra por si los necesitas después
-            "lote":         cells[4],
+            "batch":         cells[4],
             "expiration":   cells[5],
             "unitCost":     _num(cells[7]),
         })

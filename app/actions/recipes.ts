@@ -352,11 +352,17 @@ export async function createRecipeEgress(
         // Stock suficiente: no se crea ingreso previo
       }
 
+      const egressTypeLabels: Record<string, string> = {
+        EDP:  "Dispensación a Pacientes",
+        EAEE: "Abastecimiento Entre Entidades de MSP",
+        ENR:  "No Regulado",
+      };
+
       const movement = {
         product_id: product.id,
         quantity: medicament.quantity,
         type: "salida" as const,
-        reason: recipeData.egressSubtype || "Entrega de receta",
+        reason: egressTypeLabels[recipeData.egressType] ?? "Entrega de receta",
         notes: `Lote: ${medicament.batch || "No especificado"} | Vencimiento: ${medicament.expirationDate}`,
         recorded_by: "Sistema",
 
@@ -367,7 +373,7 @@ export async function createRecipeEgress(
         prescription_group_id: prescriptionGroupId,
         recipe_code: recipeData.egressNumber,
         recipe_date: recipeData.egressDate,
-        patient_name: recipeData.patientName || recipeData.recipientName,
+        patient_name: recipeData.patientName || "",
         prescribed_by: undefined,
         cie_code: undefined,
         recipe_notes: `Paciente ID: ${recipeData.patientIdentifier} | Receptor: ${recipeData.recipientName}`,
@@ -740,7 +746,7 @@ export async function createSingleMissingProduct(
       formData.set("from_pdf_movement", "true");
       formData.set("recipe_code", recipeData.egressNumber);
       formData.set("recipe_date", recipeData.egressDate || "");
-      formData.set("patient_name", recipeData.patientName || recipeData.recipientName || "");
+      formData.set("patient_name", recipeData.patientName || "");
 
       const createResult = await createProduct(formData, "Sistema");
       if (!createResult.success) {

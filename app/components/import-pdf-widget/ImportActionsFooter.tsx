@@ -79,7 +79,7 @@ export function ImportActionsFooter({
             Cancelar
           </Button>
           <Button type="button" onClick={onProcess} disabled={blocked}>
-            {processing ? "Procesando\u2026" : "Procesar egreso"}
+            {processing ? "Procesando\u2026" : "Procesar"}
           </Button>
         </div>
       </div>

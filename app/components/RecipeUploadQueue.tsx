@@ -394,8 +394,6 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
 
       const parseResult = await pdfResponse.json(); // ya viene como EgresoData
 
-      console.table(parseResult);
-
       if (parseResult && typeof parseResult === "object" && "success" in parseResult && parseResult.success === false) {
         return {
           success: false,
@@ -403,9 +401,9 @@ export const RecipeUploadQueue: React.FC<RecipeUploadQueueProps> = ({ onProcessi
           error: "VALIDATION_ERROR",
         };
       }
-console.log(process.env.NEXT_PUBLIC_SUPABASE_URL);
+      
       const recipeData = parseResult as RecipeData;
-console.log('Resultado de parseResult:', recipeData);
+      
       // Validar duplicados por número de egreso
       if (recipeData.egressNumber) {
         const existingEgress = queueRef.current.find(
@@ -413,9 +411,8 @@ console.log('Resultado de parseResult:', recipeData);
             i.id !== itemId &&
             i.extractedRecipeData?.egressNumber === recipeData.egressNumber
         );
-        console.log('Encontrado:', existingEgress);
+        
         if (existingEgress) {
-        console.log('Encontrado x2:', existingEgress);
 
           return {
             success: false,
@@ -465,8 +462,7 @@ console.log('Resultado de parseResult:', recipeData);
       setQueue((prev) =>
         prev.map((i) => (i.id === itemId ? { ...i, progress: 100 } : i))
       );
-      console.log("Resultado de uploadAndProcessFile:", data);
-      console.table(recipeData);
+
       return {
         ...data,
         extractedRecipeData: recipeData,
@@ -534,7 +530,8 @@ console.log('Resultado de parseResult:', recipeData);
     item: QueueItemWithDetails,
     createdSkus: Set<string> | undefined,
     pdfIndex: number,
-    totalPdfs: number
+    totalPdfs: number,
+    movementType: "ingreso" | "egreso"
   ) => {
     if (!item.extractedRecipeData) return;
 
@@ -634,50 +631,69 @@ console.log('Resultado de parseResult:', recipeData);
       }
 
       // ── Phase 2: Register the egress ──
-      const egressStep = totalSteps;
-      const overallDone = ((pdfIndex * totalSteps + egressStep) / (totalPdfs * totalSteps)) * 100;
+      if(movementType === "egreso") {
+        const egressStep = totalSteps;
+        const overallDone = ((pdfIndex * totalSteps + egressStep) / (totalPdfs * totalSteps)) * 100;
 
-      setBatchProgress({
-        phase: 'registering-egress',
-        currentPdf: pdfIndex + 1,
-        totalPdfs,
-        currentPdfName: item.fileName,
-        currentStep: egressStep,
-        totalSteps,
-        currentStepLabel: 'Registrando egreso en inventario…',
-        percent: Math.round(Math.min(overallDone, 99)),
-      });
+        setBatchProgress({
+          phase: 'registering-egress',
+          currentPdf: pdfIndex + 1,
+          totalPdfs,
+          currentPdfName: item.fileName,
+          currentStep: egressStep,
+          totalSteps,
+          currentStepLabel: 'Registrando egreso en inventario…',
+          percent: Math.round(Math.min(overallDone, 99)),
+        });
 
-      const egressResponse = await fetch("/api/process-recipe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "retryRecipeEgress",
-          recipeData: item.extractedRecipeData,
-          allowedNegativeSkus,
-          justCreatedSkus: justCreatedSkusList,
-        }),
-      });
+        const egressResponse = await fetch("/api/process-recipe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "retryRecipeEgress",
+            movementType,
+            recipeData: item.extractedRecipeData,
+            allowedNegativeSkus,
+            justCreatedSkus: justCreatedSkusList,
+          }),
+        });
 
-      const data = (await egressResponse.json()) as UploadResultWithDetails;
-      applyItemResultUpdate(item.id, { ...data, extractedRecipeData: item.extractedRecipeData });
+        const data = (await egressResponse.json()) as UploadResultWithDetails;
+        applyItemResultUpdate(item.id, { ...data, extractedRecipeData: item.extractedRecipeData });
+        
 
-      const stillMissing = new Set((data.missingMedicaments || []).map((med) => med.sku));
+        // const stillMissing = new Set((data.missingMedicaments || []).map((med) => med.sku));
+        // const manuallyResolved = manualResolvedMissingByItem[item.id] || {};
+        // const nextResolved: Record<string, boolean> = { ...manuallyResolved };
+        // Object.keys(nextResolved).forEach((sku) => {
+        //   if (stillMissing.has(sku)) {
+        //     delete nextResolved[sku];
+        //   }
+        // });
+        // setManualResolvedMissingByItem((prev) => ({
+        //   ...prev,
+        //   [item.id]: nextResolved,
+        // }));
+
+        
+        // if (data.success) {
+        //   router.refresh();
+        // }
+      }
+
       const manuallyResolved = manualResolvedMissingByItem[item.id] || {};
       const nextResolved: Record<string, boolean> = { ...manuallyResolved };
-      Object.keys(nextResolved).forEach((sku) => {
-        if (stillMissing.has(sku)) {
-          delete nextResolved[sku];
-        }
-      });
+      // Object.keys(nextResolved).forEach((sku) => {
+      //   if (stillMissing.has(sku)) {
+      //     delete nextResolved[sku];
+      //   }
+      // });
       setManualResolvedMissingByItem((prev) => ({
         ...prev,
         [item.id]: nextResolved,
       }));
 
-      if (data.success) {
-        router.refresh();
-      }
+      router.refresh();
     } catch (error) {
       applyItemResultUpdate(item.id, {
         success: false,
@@ -779,7 +795,7 @@ console.log('Resultado de parseResult:', recipeData);
 
   const tableRows = useMemo<TableProductRow[]>(() => {
     const rows: TableProductRow[] = [];
-console.log("queue", queue);
+    
     queue.forEach((item) => {
       if (!item.extractedRecipeData) return;
       const didExecuteEgress = !!item.result?.didExecuteEgress && !!item.result?.success;
@@ -917,6 +933,10 @@ console.log("queue", queue);
     });
   };
 
+  const [movementTypes, setMovementTypes] = useState<
+      Record<string, "ingreso" | "egreso">
+  >({});
+
   const processAll = async () => {
     if (unresolvedMissingCount > 0 || unapprovedNegativeCount > 0 || isSubmittingEgress) return;
 
@@ -929,7 +949,7 @@ console.log("queue", queue);
     setBatchProgress(null);
     try {
       for (let i = 0; i < itemsToProcess.length; i++) {
-        await applyDecisionsAndProcessAll(itemsToProcess[i], createdSkus, i, itemsToProcess.length);
+        await applyDecisionsAndProcessAll(itemsToProcess[i], createdSkus, i, itemsToProcess.length, movementTypes[itemsToProcess[i].id]);
       }
     } finally {
       setBatchProgress(null);
@@ -1142,6 +1162,8 @@ console.log("queue", queue);
         onProcessAll={processAll}
         onAddMore={() => fileInputRef.current?.click()}
         onFilesDropped={handleFilesDropped}
+        movementTypes={movementTypes}
+        setMovementTypes={setMovementTypes}
       />
 
       <input

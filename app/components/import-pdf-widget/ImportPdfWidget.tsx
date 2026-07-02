@@ -42,6 +42,12 @@ interface ImportPdfWidgetProps {
   onProcessAll: () => void;
   onAddMore: () => void;
   onFilesDropped: (files: File[]) => void;
+  movementTypes: Record<string, "ingreso" | "egreso">;
+  setMovementTypes: React.Dispatch<
+    React.SetStateAction<Record<string, "ingreso" | "egreso">>
+  >;
+  // movementErrors: Record<string, boolean>;
+  // setMovementErrors: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 }
 
 export function ImportPdfWidget({
@@ -77,6 +83,8 @@ export function ImportPdfWidget({
   onProcessAll,
   onAddMore,
   onFilesDropped,
+  movementTypes,
+  setMovementTypes,
 }: ImportPdfWidgetProps) {
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
@@ -122,6 +130,26 @@ export function ImportPdfWidget({
       onFilesDropped(pdfFiles);
     }
   }, [onFilesDropped]);
+
+  const [movementErrors, setMovementErrors] = useState<Record<string, boolean>>({});
+
+  const handleProcess = () => {
+    const errors: Record<string, boolean> = {};
+
+    for (const pdf of pdfs) {
+        if (!movementTypes[pdf.id]) {
+            errors[pdf.id] = true;
+        }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setMovementErrors(errors);
+      return;
+    }
+
+    setMovementErrors({});
+    onProcessAll();
+  };
 
   return (
     <Card
@@ -185,6 +213,10 @@ export function ImportPdfWidget({
             onQuickCreateMissing={onQuickCreateMissing}
             onBulkCreateMissing={onBulkCreateMissing}
             onOpenMissingForm={onOpenMissingForm}
+            movementTypes={movementTypes}
+            setMovementTypes={setMovementTypes}
+            movementErrors={movementErrors}
+            setMovementErrors={setMovementErrors}
           />
         </div>
 
@@ -195,7 +227,7 @@ export function ImportPdfWidget({
           processing={isProcessing}
           batchProgress={batchProgress}
           onCancel={onCancel}
-          onProcess={onProcessAll}
+          onProcess={handleProcess}
         />
       </div>
     </Card>
